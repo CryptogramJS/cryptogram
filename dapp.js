@@ -167,14 +167,15 @@ function showAuthUI() {
     $('#auth-wrap').classList.remove('d-none');
     $('#dash-wrap').classList.add('d-none');
 
-    // Show Login/Register in navbar
-    $('#auth-nav-links').classList.remove('d-none');
     // Hide Logout in navbar
     $('#logged-in-nav-links').classList.add('d-none');
 
-    // Ensure login tab is active by default
-    const loginTab = new bootstrap.Tab($('#tab-log'));
-    loginTab.show();
+    // Ensure login tab is active by default in the main content area
+    const loginTabTrigger = document.querySelector('#auth-wrap .nav-tabs .nav-link[data-bs-target="#tab-log"]');
+    if (loginTabTrigger) {
+        const loginTab = new bootstrap.Tab(loginTabTrigger);
+        loginTab.show();
+    }
 }
 
 async function showDashboardUI(u) {
@@ -182,8 +183,6 @@ async function showDashboardUI(u) {
     $('#auth-wrap').classList.add('d-none');
     $('#dash-wrap').classList.remove('d-none');
 
-    // Hide Login/Register in navbar
-    $('#auth-nav-links').classList.add('d-none');
     // Show Logout in navbar
     $('#logged-in-nav-links').classList.remove('d-none');
 
@@ -198,19 +197,7 @@ async function showDashboardUI(u) {
     await renderInvites();
 }
 
-/* Navbar Login/Register/Logout Buttons */
-$('#nav-tab-login').onclick = (e) => {
-    e.preventDefault(); // Prevent default link behavior
-    const loginTab = new bootstrap.Tab($('#tab-log'));
-    loginTab.show();
-};
-
-$('#nav-tab-register').onclick = (e) => {
-    e.preventDefault(); // Prevent default link behavior
-    const registerTab = new bootstrap.Tab($('#tab-reg'));
-    registerTab.show();
-};
-
+/* Navbar Logout Button */
 $('#nav-logout').onclick = async () => {
     toggleLoading($('#nav-logout'), true);
     try {
@@ -265,8 +252,11 @@ $('#btn-reg-ok').onclick = async () => {
         console.warn('Clipboard copy error, fallback used:', e);
     }
     // After saving token, switch to login tab and pre-fill
-    const loginTab = new bootstrap.Tab($('#tab-log'));
-    loginTab.show();
+    const loginTabTrigger = document.querySelector('#auth-wrap .nav-tabs .nav-link[data-bs-target="#tab-log"]');
+    if (loginTabTrigger) {
+        const loginTab = new bootstrap.Tab(loginTabTrigger);
+        loginTab.show();
+    }
     $('#extended-inp').value = t;
 };
 
@@ -324,7 +314,6 @@ async function renderChats() {
     try {
         const chats = (await db.profile.get('me'))?.data.chats || [];
         $('#chat-list').innerHTML = chats.length ?
-            // Removed bg-dark text-light from here to rely on Bootstrap theme
             chats.map(c => `<button class="list-group-item list-group-item-action" data-url="${c.chat_url}">${c.nickname || c.peerShortUsername || c.peerSlug || 'chat'}</button>`).join('') :
             '<p class="small text-muted text-center">No chats.</p>';
     } catch (e) {
@@ -487,7 +476,6 @@ async function renderInvites() {
 
         const pend = invites_log.filter(i => i.op === 'new' && !invites_log.find(j => j.ts === i.ts && j.op === 'accepted'));
         $('#inv-box').innerHTML = pend.length ?
-            // Removed bg-secondary from here to rely on Bootstrap theme
             pend.map(i => `<div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded">
                 <code class="text-light">${i.ts.slice(0, 8)} - From: ${i.fromShortUsername || i.fromSlug.slice(0, 8)}</code>
                 <button class="btn btn-sm btn-primary accept" data-ts="${i.ts}" data-chat-url="${i.chatUrl}" data-from-slug="${i.fromSlug}" data-from-email="${i.fromEmail}" data-from-short-username="${i.fromShortUsername}">Accept</button>
