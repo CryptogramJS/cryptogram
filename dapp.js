@@ -167,8 +167,8 @@ function showAuthUI() {
     $('#auth-wrap').classList.remove('d-none');
     $('#dash-wrap').classList.add('d-none');
 
-    // Hide Logout in navbar
-    $('#logged-in-nav-links').classList.add('d-none');
+    // Hide Logout button in navbar
+    $('#nav-logout').classList.add('d-none');
 
     // Ensure login tab is active by default in the main content area
     const loginTabTrigger = document.querySelector('#auth-wrap .nav-tabs .nav-link[data-bs-target="#tab-log"]');
@@ -183,8 +183,8 @@ async function showDashboardUI(u) {
     $('#auth-wrap').classList.add('d-none');
     $('#dash-wrap').classList.remove('d-none');
 
-    // Show Logout in navbar
-    $('#logged-in-nav-links').classList.remove('d-none');
+    // Show Logout button in navbar
+    $('#nav-logout').classList.remove('d-none');
 
     $('#user-slug').textContent = u;
     const link = localStorage.getItem('0k_blob_url') || '#';
@@ -578,8 +578,6 @@ window.addEventListener('beforeunload', () => {
         closeChat(currentChat);
     }
 });
-
-/* logout is now handled by nav-logout click listener */
 
 /* restore / initial load */
 document.addEventListener('DOMContentLoaded', () => {
