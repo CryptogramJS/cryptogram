@@ -1,233 +1,186 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
 <meta charset="utf-8"/>
 <title>Cryptogram – beta</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-
 <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/vapor/bootstrap.min.css" rel="stylesheet"/>
-
 <style>
-    body {
-        /* Ensures body is tall enough for vertical centering */
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        padding-top: 20px; /* Adds a bit of top padding */
-        padding-bottom: 20px; /* Adds a bit of bottom padding */
-    }
-    .container {
-        max-width: 960px; /* Limits the width of the main container */
-    }
-    .captcha-img {
-        width: 100%;
-        display: block;
-        margin-bottom: .5rem;
-    }
-    textarea.mnemonic {
-        font-family: monospace;
-        user-select: all;
-        height: 90px;
-    }
-    #chat-list {
-        overflow-y: auto;
-        max-height: 60vh;
-    }
-    #chat-msgs {
-        max-height: 60vh;
-        overflow-y: auto;
-        display: flex; /* Use flexbox for message alignment */
-        flex-direction: column;
-        padding: 1rem; /* Added padding for message bubbles */
-    }
-    /* Styles for chat messages */
-    #chat-msgs .me {
-        align-self: flex-end; /* Aligns my messages to the right */
-        text-align: right;
-    }
-    #chat-msgs .peer {
-        align-self: flex-start; /* Aligns peer messages to the left */
-        text-align: left;
-    }
-    #chat-msgs .message-bubble {
-        padding: 0.5rem 0.75rem;
-        border-radius: 0.75rem; /* Rounded corners */
-        margin-bottom: 0.5rem;
-        max-width: 85%; /* Limits bubble width */
-        word-wrap: break-word; /* Ensures long text wraps */
-        display: inline-block; /* Allows bubble to size to content */
-    }
-    #chat-msgs .me .message-bubble {
-        background-color: #007bff; /* Bootstrap primary color for sender */
-        color: #fff;
-    }
-    #chat-msgs .peer .message-bubble {
-        background-color: #6c757d; /* Bootstrap secondary color for recipient */
-        color: #fff;
-    }
-    #chat-msgs .message-sender {
-        font-size: 0.8em;
-        opacity: 0.8;
-        margin-bottom: 0.2rem;
-        display: block; /* Ensures sender name is on its own line */
-    }
-    /* Captcha feedback */
-    .is-valid {
-        border-color: #28a745 !important;
-    }
-    .is-invalid {
-        border-color: #dc3545 !important;
-    }
-    /* Toast container styling */
-    #toast-container {
-        z-index: 1080;
-    }
+    html,body{height:100%}
+    body{display:flex;flex-direction:column;min-height:100%;background:url("https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1350&q=80") center/cover,fixed}
+    main{flex:1}
+    .glass{background:rgba(0,0,0,.6);backdrop-filter:blur(8px)}
+    .chat-scroll{max-height:60vh;overflow-y:auto}
+    .bubble{display:inline-block;padding:.5rem .75rem;border-radius:1rem;max-width:85%;word-wrap:break-word}
+    .bubble.me{background:#0d6efd;color:#fff;align-self:flex-end;text-align:right}
+    .bubble.peer{background:#6c757d;color:#fff;align-self:flex-start;text-align:left}
+    #toast-container{z-index:1080}
 </style>
 </head>
-
-<body class="container py-5">
-
-<h1 class="text-center mb-4">Cryptogram <small>beta</small></h1>
-
-<div id="auth-wrap">
-    <ul class="nav nav-tabs justify-content-center mb-4">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-log">Login</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg">Register</button></li>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="#">Cryptogram</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navcol" aria-controls="navcol" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navcol">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item d-none" id="nav-logout-li"><button id="nav-logout" class="btn btn-link nav-link">Logout</button></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+<main class="container py-4">
+  <h1 class="text-center text-white display-4 mb-4">Secure chat for everyone</h1>
+  <div id="auth-wrap" class="glass rounded-4 p-4 shadow-lg">
+    <ul class="nav nav-tabs nav-fill mb-4">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-log">Login</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg">Register</button></li>
     </ul>
-
     <div class="tab-content">
-        <div class="tab-pane fade show active p-4" id="tab-log">
-            <div class="card p-4 mx-auto shadow" style="max-width:420px">
-                <h4 class="mb-3">Login</h4>
-                <img id="cap-img-log" class="captcha-img border rounded" alt="Captcha">
+      <div class="tab-pane fade show active" id="tab-log">
+        <div class="row g-4">
+          <div class="col-md-6 offset-md-3">
+            <div class="card shadow-lg">
+              <div class="card-body p-4">
+                <h4 class="card-title mb-3 text-center">Login</h4>
+                <img id="cap-img-log" class="captcha-img border rounded-3" alt="Captcha">
                 <input id="cap-inp-log" class="form-control mb-2" placeholder="Enter captcha">
-                <textarea id="extended-inp" class="form-control mb-2" placeholder="Extended token (Base64 JSON)"></textarea>
+                <textarea id="extended-inp" class="form-control mb-3" placeholder="Extended token (Base64 JSON)"></textarea>
                 <button id="btn-log" class="btn btn-primary w-100">Login ▶︎</button>
-                <div id="log-msg" class="mt-3 small"></div>
+                <div id="log-msg" class="mt-3 small text-center"></div>
+              </div>
             </div>
+          </div>
         </div>
-
-        <div class="tab-pane fade p-4" id="tab-reg">
-            <div class="card p-4 mx-auto shadow" style="max-width:420px">
-                <h4 class="mb-3">Create account</h4>
-                <img id="cap-img-reg" class="captcha-img border rounded" alt="Captcha">
+      </div>
+      <div class="tab-pane fade" id="tab-reg">
+        <div class="row g-4">
+          <div class="col-md-6 offset-md-3">
+            <div class="card shadow-lg">
+              <div class="card-body p-4">
+                <h4 class="card-title mb-3 text-center">Create account</h4>
+                <img id="cap-img-reg" class="captcha-img border rounded-3" alt="Captcha">
                 <input id="cap-inp-reg" class="form-control mb-2" placeholder="Enter captcha">
                 <button id="btn-reg" class="btn btn-success w-100">Create 🔐</button>
-                <div id="reg-msg" class="mt-3 small"></div>
-
-                <div id="reg-sec" class="mt-3 d-none">
-                    <label class="small">Extended token (save this!)</label>
-                    <textarea id="extended-out" class="form-control mnemonic mb-2" readonly></textarea>
-                    <button id="btn-reg-ok" class="btn btn-primary w-100">I saved it ✔︎</button>
+                <div id="reg-msg" class="mt-3 small text-center"></div>
+                <div id="reg-sec" class="mt-4 d-none">
+                  <label class="small">Extended token (save this!)</label>
+                  <textarea id="extended-out" class="form-control mnemonic mb-2" readonly></textarea>
+                  <button id="btn-reg-ok" class="btn btn-primary w-100">I saved it ✔︎</button>
                 </div>
+              </div>
             </div>
+          </div>
         </div>
+      </div>
     </div>
-</div>
-
-<div id="dash-wrap" class="d-none">
-    <ul class="nav nav-tabs mb-3">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-chat">Chat</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-inv">Invites</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-me">Profile</button></li>
+  </div>
+  <div id="dash-wrap" class="d-none">
+    <ul class="nav nav-tabs nav-fill mb-3">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-chat">Chat</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-inv">Invites</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-me">Profile</button></li>
     </ul>
-
-    <div class="tab-content">
-        <div class="tab-pane fade show active" id="tab-chat">
-            <div class="d-flex mb-2">
-                <button class="btn btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#inviteModal">Invite +</button>
-            </div>
-
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <div id="chat-list" class="list-group">
-                        <p class="small text-muted text-center">Loading chats...</p>
-                    </div>
-                </div>
-
-                <div class="col-md-8">
-                    <div id="chat-empty" class="border rounded p-5 text-center text-muted bg-dark">
-                        <em>No chat open…</em>
-                    </div>
-
-                    <div id="chat-pane" class="d-none">
-                        <div id="chat-msgs" class="border rounded bg-dark"></div>
-                        <div class="input-group mt-2">
-                            <input id="chat-input" class="form-control" placeholder="Type message…">
-                            <button id="btn-send" class="btn btn-primary" disabled>Send</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <div class="tab-content glass rounded-4 p-4 shadow-lg">
+      <div class="tab-pane fade show active" id="tab-chat">
+        <div class="d-flex mb-3">
+          <button class="btn btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#inviteModal">Invite +</button>
         </div>
-
-        <div class="tab-pane fade" id="tab-inv">
-            <h5 class="mb-3">Pending invites</h5>
-            <div id="inv-box">
-                <p class="small text-muted text-center">Loading invites...</p>
+        <div class="row g-4">
+          <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+              <div class="card-header text-center fw-bold">Chats</div>
+              <div id="chat-list" class="list-group list-group-flush chat-scroll">
+                <p class="small text-muted text-center my-3">Loading chats…</p>
+              </div>
             </div>
+          </div>
+          <div class="col-md-8 d-flex flex-column">
+            <div id="chat-empty" class="card h-100 d-flex align-items-center justify-content-center text-muted bg-dark">
+              <em>No chat open…</em>
+            </div>
+            <div id="chat-pane" class="d-none flex-grow-1 d-flex flex-column">
+              <div id="chat-msgs" class="card flex-grow-1 p-3 bg-dark chat-scroll d-flex flex-column gap-2"></div>
+              <div class="input-group mt-3">
+                <input id="chat-input" class="form-control" placeholder="Type message…">
+                <button id="btn-send" class="btn btn-primary" disabled>Send</button>
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div class="tab-pane fade" id="tab-me">
-            <p><strong>Session username:</strong> <code id="user-slug"></code></p>
-            <p><strong>Personal blob:</strong> <a id="blob-link" target="_blank"></a></p>
-            <pre id="profile-box" class="bg-dark p-3 rounded small"></pre>
-            <button id="btn-logout" class="btn btn-danger mt-3">Logout</button>
+      </div>
+      <div class="tab-pane fade" id="tab-inv">
+        <h4 class="mb-3 text-center">Pending invites</h4>
+        <div id="inv-box" class="row g-4">
+          <p class="small text-muted text-center">Loading invites…</p>
         </div>
+      </div>
+      <div class="tab-pane fade" id="tab-me">
+        <div class="row g-4">
+          <div class="col-md-4">
+            <div class="card shadow-sm text-center">
+              <div class="card-body">
+                <img src="https://api.dicebear.com/7.x/thumbs/svg?seed=user" class="rounded-circle mb-3" width="120" height="120" alt="avatar">
+                <h5 class="card-title" id="user-slug"></h5>
+                <a id="blob-link" target="_blank" class="btn btn-outline-primary btn-sm mt-2">Personal blob</a>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-8">
+            <div class="card shadow-sm h-100">
+              <div class="card-header fw-bold">Profile JSON</div>
+              <pre id="profile-box" class="card-body bg-dark text-white small"></pre>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-center mt-4">
+          <button id="btn-logout" class="btn btn-danger px-5">Logout</button>
+        </div>
+      </div>
     </div>
-</div>
-
+  </div>
+</main>
 <div class="modal fade" id="inviteModal" tabindex="-1" aria-labelledby="inviteModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark">
-            <div class="modal-header">
-                <h5 class="modal-title" id="inviteModalLabel">Send invite</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <input id="slug-invite" class="form-control mb-3" placeholder="Friend's slug">
-                <div id="invite-status" class="small text-info"></div>
-            </div>
-            <div class="modal-footer">
-                <button id="btn-invite" class="btn btn-primary">Invite</button>
-                <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
-        </div>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="inviteModalLabel">Send invite</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body py-4">
+        <input id="slug-invite" class="form-control mb-3" placeholder="Friend's slug">
+        <div id="invite-status" class="small text-info text-center"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button id="btn-invite" class="btn btn-primary w-100">Invite</button>
+      </div>
     </div>
+  </div>
 </div>
-
 <div class="modal fade" id="nicknameModal" tabindex="-1" aria-labelledby="nicknameModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark">
-            <div class="modal-header">
-                <h5 class="modal-title" id="nicknameModalLabel">Set Nickname</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label for="nicknameInput" class="form-label">Nickname for this chat:</label>
-                    <input type="text" class="form-control" id="nicknameInput" value="friend" placeholder="e.g. Friend">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="saveNicknameBtn">Save</button>
-            </div>
-        </div>
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-0">
+        <h5 class="modal-title" id="nicknameModalLabel">Set Nickname</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body py-4">
+        <input type="text" class="form-control" id="nicknameInput" placeholder="e.g. Friend">
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="saveNicknameBtn">Save</button>
+      </div>
     </div>
+  </div>
 </div>
-
-<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container">
-    </div>
-
+<div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.5.4/sodium.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.4/dist/dexie.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/automerge@2.3.1/dist/automerge.min.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
 <script type="module" src="./sha.js"></script>
 <script type="module" src="./validator.js"></script>
 <script type="module" src="./0knowledge.js"></script>
