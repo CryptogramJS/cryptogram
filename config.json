@@ -1,22 +1,13 @@
 {
-  /* ========== DATA BACK-END ========== */
   "jsonblob_endpoint": "https://jsonblob.com/api/jsonBlob",
-
-  /* ========== WEBHOOK ========== */
   "webhook_base_url": "https://webhook.site",
   "webhook_create_endpoint": "https://webhook.site/token",
   "webhook_email_domain": "emailhook.site",
-
-  /* ========== CAPTCHA ========== */
   "opencaptcha_endpoint": "https://api.opencaptcha.io/captcha",
   "captcha_max_attempts": 5,
   "captcha_cooldown_ms": 10000,
-
-  /* ========== OPEN-TIMESTAMPS ========== */
   "ots_stamp_endpoint": "https://alice.btc.ots.im/v3/stamp",
   "ots_proof_endpoint": "https://alice.btc.ots.im/v3/proof/",
-
-  /* ========== SESSION & SYNC ========== */
   "token_lifetime_ms": 3600000,
   "chat_sync_interval_ms": 3000,
   "chat_write_fallback_ms": 30000,
