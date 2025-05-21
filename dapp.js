@@ -162,6 +162,22 @@ refreshCaps();
 /* runtime */
 let myUsername = '', currentChat = null, chatPoll = null;
 
+/**
+ * Updates the styling of Bootstrap tabs within a given container.
+ * Adds 'glass' to inactive tabs and removes it from the active one.
+ * @param {string} navTabsContainerSelector - CSS selector for the .nav-tabs container.
+ */
+function updateTabStyles(navTabsContainerSelector) {
+    const tabButtons = document.querySelectorAll(`${navTabsContainerSelector} .nav-link`);
+    tabButtons.forEach(button => {
+        if (button.classList.contains('active')) {
+            button.classList.remove('glass');
+        } else {
+            button.classList.add('glass');
+        }
+    });
+}
+
 /* UI State Management */
 function showAuthUI() {
     $('#auth-wrap').classList.remove('d-none');
@@ -175,6 +191,7 @@ function showAuthUI() {
     if (loginTabTrigger) {
         const loginTab = new bootstrap.Tab(loginTabTrigger);
         loginTab.show();
+        updateTabStyles('#auth-wrap .nav-tabs'); // Update styles after showing the tab
     }
 }
 
@@ -195,6 +212,7 @@ async function showDashboardUI(u) {
     await loadProfile();
     await renderChats();
     await renderInvites();
+    updateTabStyles('#dash-wrap .nav-tabs'); // Update styles for dashboard tabs
 }
 
 /* ╔══════════════════════════════════════╗  REGISTER */
@@ -239,6 +257,7 @@ $('#btn-reg-ok').onclick = async () => {
     if (loginTabTrigger) {
         const loginTab = new bootstrap.Tab(loginTabTrigger);
         loginTab.show();
+        updateTabStyles('#auth-wrap .nav-tabs'); // Update styles after switching tab
     }
     $('#extended-inp').value = t;
 };
@@ -605,6 +624,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // Add event listener for auth tab clicks to update styles
+    const authNavTabs = document.querySelector('#auth-wrap .nav-tabs');
+    if (authNavTabs) {
+        authNavTabs.addEventListener('shown.bs.tab', function (e) {
+            updateTabStyles('#auth-wrap .nav-tabs');
+        });
+    }
+
+    // Add event listener for dashboard tab clicks to update styles
+    const dashNavTabs = document.querySelector('#dash-wrap .nav-tabs');
+    if (dashNavTabs) {
+        dashNavTabs.addEventListener('shown.bs.tab', function (e) {
+            updateTabStyles('#dash-wrap .nav-tabs');
+        });
+    }
+
     if (isSession()) {
         const u = localStorage.getItem('0k_username');
         if (u) {
@@ -615,5 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     } else {
         showAuthUI(); // Show auth UI if no session
+        // Initial style update for auth tabs when not logged in
+        updateTabStyles('#auth-wrap .nav-tabs');
     }
 });
