@@ -19,12 +19,16 @@ const {
     ensureChat, getChatMessages, onIncomingWebhook,
     setNickname, verifySnapshot, utils, db, cfg: CFG
 } = ok0;
-const { usernameToSlug } = utils;
 
 /* --- DOM helpers ----------------------------------------------------------- */
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 
+/**
+ * Displays a non-blocking Bootstrap "toast" notification.
+ * @param {string} message - The message to display.
+ * @param {string} type - The Bootstrap alert type (e.g., 'success', 'danger', 'info', 'warning').
+ */
 function showToast(message, type = 'info') {
     const toastContainer = $('#toast-container');
     if (!toastContainer) {
@@ -55,6 +59,11 @@ function showToast(message, type = 'info') {
     });
 }
 
+/**
+ * Shows/hides a loading spinner on a button.
+ * @param {HTMLElement} buttonElement - The button associated with the operation.
+ * @param {boolean} show - True to show the spinner, false to hide it.
+ */
 function toggleLoading(buttonElement, show) {
     if (show) {
         buttonElement.setAttribute('data-original-text', buttonElement.innerHTML);
@@ -66,9 +75,15 @@ function toggleLoading(buttonElement, show) {
     }
 }
 
+/* ╔══════════════════════════════════════╗  CAPTCHA */
 let hReg = '', hLog = '';
 let triesR = 0, triesL = 0, blkR = 0, blkL = 0;
 
+/**
+ * Generates a new CAPTCHA and returns its SHA256 hash.
+ * @param {HTMLImageElement} img - The <img> element where the CAPTCHA will be displayed.
+ * @returns {Promise<string>} The SHA256 hash of the CAPTCHA text.
+ */
 async function genCap(img) {
     const s = Math.random().toString(36).slice(2, 8);
     const c = document.createElement('canvas');
@@ -85,11 +100,20 @@ async function genCap(img) {
     return sha256(s);
 }
 
+/**
+ * Refreshes both CAPTCHAs (for registration and login).
+ */
 async function refreshCaps() {
     hLog = await genCap($('#cap-img-log'));
     hReg = await genCap($('#cap-img-reg'));
 }
 
+/**
+ * Checks if a CAPTCHA passed and manages blocking/retries logic.
+ * @param {'reg'|'log'} type - The CAPTCHA type ('reg' for registration, 'log' for login).
+ * @param {boolean} ok - True if the entered CAPTCHA is correct.
+ * @returns {boolean} True if the CAPTCHA is valid and not blocked, otherwise false.
+ */
 function capPass(type, ok) {
     const now = Date.now();
     const max = CFG.captcha_max_attempts;
@@ -126,8 +150,7 @@ function capPass(type, ok) {
 
 refreshCaps();
 
-$$('button[data-bs-toggle="tab"]').forEach(b => b.addEventListener('shown.bs.tab', refreshCaps));
-
+// Event listeners for captcha input fields
 ['reg', 'log'].forEach(t => {
     $(`#cap-inp-${t}`).oninput = async e => {
         const ok = await sha256(e.target.value.trim()) === (t === 'reg' ? hReg : hLog);
@@ -136,13 +159,82 @@ $$('button[data-bs-toggle="tab"]').forEach(b => b.addEventListener('shown.bs.tab
     };
 });
 
+/* runtime */
 let myUsername = '', currentChat = null, chatPoll = null;
 
+/* UI State Management */
+function showAuthUI() {
+    $('#auth-wrap').classList.remove('d-none');
+    $('#dash-wrap').classList.add('d-none');
+
+    // Show Login/Register in navbar
+    $('#auth-nav-links').classList.remove('d-none');
+    // Hide Logout in navbar
+    $('#logged-in-nav-links').classList.add('d-none');
+
+    // Ensure login tab is active by default
+    const loginTab = new bootstrap.Tab($('#tab-log'));
+    loginTab.show();
+}
+
+async function showDashboardUI(u) {
+    myUsername = u;
+    $('#auth-wrap').classList.add('d-none');
+    $('#dash-wrap').classList.remove('d-none');
+
+    // Hide Login/Register in navbar
+    $('#auth-nav-links').classList.add('d-none');
+    // Show Logout in navbar
+    $('#logged-in-nav-links').classList.remove('d-none');
+
+    $('#user-slug').textContent = u;
+    const link = localStorage.getItem('0k_blob_url') || '#';
+    $('#blob-link').href = link;
+    $('#blob-link').textContent = link;
+    $('#chat-empty').classList.remove('d-none');
+    $('#chat-pane').classList.add('d-none');
+    await loadProfile();
+    await renderChats();
+    await renderInvites();
+}
+
+/* Navbar Login/Register/Logout Buttons */
+$('#nav-tab-login').onclick = (e) => {
+    e.preventDefault(); // Prevent default link behavior
+    const loginTab = new bootstrap.Tab($('#tab-log'));
+    loginTab.show();
+};
+
+$('#nav-tab-register').onclick = (e) => {
+    e.preventDefault(); // Prevent default link behavior
+    const registerTab = new bootstrap.Tab($('#tab-reg'));
+    registerTab.show();
+};
+
+$('#nav-logout').onclick = async () => {
+    toggleLoading($('#nav-logout'), true);
+    try {
+        await logout();
+        showToast('Logged out successfully!', 'success');
+        console.log('User logged out.');
+        location.reload(); // Reload to reset UI state
+    } catch (e) {
+        showToast('Error logging out: ' + e.message, 'danger');
+        console.error('Error logging out:', e);
+    } finally {
+        toggleLoading($('#nav-logout'), false);
+    }
+};
+
+
+/* ╔══════════════════════════════════════╗  REGISTER */
 $('#btn-reg').onclick = async () => {
     const captchaInput = $('#cap-inp-reg').value.trim();
     const isCaptchaValid = await sha256(captchaInput) === hReg;
 
-    if (!capPass('reg', isCaptchaValid)) return;
+    if (!capPass('reg', isCaptchaValid)) {
+        return;
+    }
 
     toggleLoading($('#btn-reg'), true);
     try {
@@ -172,17 +264,22 @@ $('#btn-reg-ok').onclick = async () => {
         showToast('Token copied (fallback method)!', 'success');
         console.warn('Clipboard copy error, fallback used:', e);
     }
-    document.querySelector('[data-bs-target="#tab-log"]').click();
+    // After saving token, switch to login tab and pre-fill
+    const loginTab = new bootstrap.Tab($('#tab-log'));
+    loginTab.show();
     $('#extended-inp').value = t;
 };
 
+/* ╔══════════════════════════════════════╗  LOGIN */
 $('#btn-log').onclick = loginFlow;
 
 async function loginFlow() {
     const captchaInput = $('#cap-inp-log').value.trim();
     const isCaptchaValid = await sha256(captchaInput) === hLog;
 
-    if (!capPass('log', isCaptchaValid)) return;
+    if (!capPass('log', isCaptchaValid)) {
+        return;
+    }
 
     const tok = $('#extended-inp').value.trim() || window._tok;
     if (!validator.isNonEmptyString(tok)) {
@@ -195,7 +292,7 @@ async function loginFlow() {
         const username = await authenticate(tok);
         showToast(`Authentication successful! Welcome, ${username}!`, 'success');
         console.log('Authentication successful for user:', username);
-        await buildUI(username);
+        await showDashboardUI(username); // Call the new function to manage UI state
     } catch (e) {
         showToast('Authentication error: ' + e.message, 'danger');
         console.error('Authentication error:', e);
@@ -205,21 +302,10 @@ async function loginFlow() {
     }
 }
 
-async function buildUI(u) {
-    myUsername = u;
-    $('#auth-wrap').classList.add('d-none');
-    $('#dash-wrap').classList.remove('d-none');
-    $('#user-slug').textContent = u;
-    const link = localStorage.getItem('0k_blob_url') || '#';
-    $('#blob-link').href = link;
-    $('#blob-link').textContent = link;
-    $('#chat-empty').classList.remove('d-none');
-    $('#chat-pane').classList.add('d-none');
-    await loadProfile();
-    await renderChats();
-    await renderInvites();
-}
+/* ╔══════════════════════════════════════╗  DASHBOARD */
+// buildUI is now showDashboardUI, updated above
 
+/* Profile */
 async function loadProfile() {
     try {
         const p = await db.profile.get('me');
@@ -233,11 +319,13 @@ async function loadProfile() {
     }
 }
 
+/* Chats list */
 async function renderChats() {
     try {
         const chats = (await db.profile.get('me'))?.data.chats || [];
         $('#chat-list').innerHTML = chats.length ?
-            chats.map(c => `<button class="list-group-item list-group-item-action bg-dark text-light" data-url="${c.chat_url}">${c.nickname || c.peerSlug || 'chat'}</button>`).join('') :
+            // Removed bg-dark text-light from here to rely on Bootstrap theme
+            chats.map(c => `<button class="list-group-item list-group-item-action" data-url="${c.chat_url}">${c.nickname || c.peerShortUsername || c.peerSlug || 'chat'}</button>`).join('') :
             '<p class="small text-muted text-center">No chats.</p>';
     } catch (e) {
         console.error('Error rendering chat list:', e);
@@ -245,44 +333,65 @@ async function renderChats() {
     }
 }
 $('#chat-list').onclick = e => {
-    if (e.target.dataset.url) openChat(e.target.dataset.url);
+    if (e.target.dataset.url) {
+        openChat(e.target.dataset.url);
+    }
 };
 
+/* open chat */
 async function openChat(url) {
-    if (chatPoll) clearInterval(chatPoll);
+    if (chatPoll) {
+        clearInterval(chatPoll);
+        chatPoll = null;
+    }
     try {
         const profile = await db.profile.get('me');
         currentChat = profile.data.chats.find(c => c.chat_url === url);
-        if (!currentChat) throw new Error('Chat not found.');
+
+        if (!currentChat) {
+            showToast('Chat not found.', 'danger');
+            console.error('Attempt to open non-existent chat:', url);
+            return;
+        }
+
         $('#chat-empty').classList.add('d-none');
         $('#chat-pane').classList.remove('d-none');
         $('#chat-msgs').innerHTML = '<p class="small text-muted text-center">Loading messages…</p>';
+
         await ensureChat(currentChat);
         await verifyLastOTS(currentChat.chat_url);
         await loadMsgs();
         chatPoll = setInterval(loadMsgs, CFG.chat_sync_interval_ms);
-        showToast(`Chat opened with ${currentChat.nickname || currentChat.peerSlug || 'partner'}.`, 'info');
+        showToast(`Chat opened with ${currentChat.nickname || currentChat.peerShortUsername || currentChat.peerSlug || 'partner'}.`, 'info');
     } catch (e) {
-        console.error('Error opening chat:', e);
         showToast('Error opening chat: ' + e.message, 'danger');
+        console.error('Error opening chat:', e);
     }
 }
 
+/* OTS verify */
 async function verifyLastOTS(chatUrl) {
     try {
         const doc = (await db.doc.get(chatUrl))?.meta;
         const flushes = Object.keys(doc?.ots?.flush || {});
-        if (!flushes.length) return;
+        if (!flushes.length) {
+            return;
+        }
         const last = flushes.sort((a, b) => b - a)[0];
         const ok = await verifySnapshot(chatUrl, last);
-        if (!ok) showToast('⚠️ OTS snapshot verification failed!', 'warning');
-        else showToast('✔ OTS snapshot verification successful.', 'success');
+        if (!ok) {
+            showToast('⚠️ OTS snapshot verification failed!', 'warning');
+            console.warn('OTS snapshot verification failed for chat:', chatUrl, 'at timestamp:', last);
+        } else {
+            showToast('✔ OTS snapshot verification successful.', 'success');
+        }
     } catch (e) {
         console.error('Error verifying OTS:', e);
         showToast('Error verifying chat integrity.', 'danger');
     }
 }
 
+/* load messages */
 async function loadMsgs() {
     if (!currentChat) return;
     try {
@@ -290,7 +399,7 @@ async function loadMsgs() {
         $('#chat-msgs').innerHTML = msgs.length ?
             msgs.map(m => `
                 <div class="${m.from === myUsername ? 'me' : 'peer'}">
-                    <div class="message-sender">${m.from === myUsername ? 'Me' : currentChat.nickname || currentChat.peerSlug}</div>
+                    <div class="message-sender">${m.from === myUsername ? 'Me' : currentChat.nickname || currentChat.peerShortUsername || currentChat.peerSlug}</div>
                     <div class="message-bubble">${m.txt}</div>
                 </div>
             `).join('') :
@@ -302,6 +411,7 @@ async function loadMsgs() {
     }
 }
 
+/* send message */
 let deb = null;
 $('#chat-input').oninput = () => {
     clearTimeout(deb);
@@ -310,50 +420,77 @@ $('#chat-input').oninput = () => {
 };
 $('#btn-send').onclick = async () => {
     const t = $('#chat-input').value.trim();
-    if (!validator.isNonEmptyString(t)) return showToast('Message cannot be empty.', 'warning');
+    if (!validator.isNonEmptyString(t)) {
+        showToast('Message cannot be empty.', 'warning');
+        return;
+    }
 
     $('#chat-input').value = '';
+    $('#btn-send').disabled = true;
     toggleLoading($('#btn-send'), true);
     try {
         await sendMessage(currentChat, t);
         await loadMsgs();
         showToast('Message sent!', 'success');
     } catch (e) {
-        console.error('Error sending message:', e);
         showToast('Error sending message: ' + e.message, 'danger');
+        console.error('Error sending message:', e);
     } finally {
         toggleLoading($('#btn-send'), false);
     }
 };
 
+/* invite modal send */
 $('#btn-invite').onclick = async () => {
     const slug = $('#slug-invite').value.trim();
-    if (!validator.isValidSlug(slug)) return showToast('Invitee slug is invalid. Use only alphanumeric characters.', 'warning');
+    // Validate that the slug is a valid base-36 username (alphanumeric)
+    if (!validator.isValidSlug(slug)) { 
+        showToast('Invitee username is invalid. Use only alphanumeric characters.', 'warning');
+        return;
+    }
 
     toggleLoading($('#btn-invite'), true);
     try {
-        await sendInvite(usernameToSlug(slug));
+        // Pass the short username directly to sendInvite
+        await sendInvite(slug); 
         showToast('Invitation sent successfully!', 'success');
-        bootstrap.Modal.getInstance($('#inviteModal'))?.hide();
+        const inviteModalInstance = bootstrap.Modal.getInstance($('#inviteModal'));
+        if (inviteModalInstance) inviteModalInstance.hide();
         $('#slug-invite').value = '';
     } catch (e) {
-        console.error('Error sending invitation:', e);
         showToast('Error sending invitation: ' + e.message, 'danger');
+        console.error('Error sending invitation:', e);
     } finally {
         toggleLoading($('#btn-invite'), false);
     }
 };
 
+/* pending invites */
 async function renderInvites() {
     try {
-        const pin = document.cookie.match(/pin_url=([^;]+)/)?.[1];
-        if (!pin) return $('#inv-box').innerHTML = '<p class="small text-muted text-center">No pending invitations.</p>';
-        const { invites_log = [] } = await fetch(decodeURIComponent(pin)).then(r => r.json());
-        const pend = invites_log.filter(i => i.op === 'new' && !invites_log.some(j => j.ts === i.ts && j.op === 'accepted'));
+        // We need to fetch from our own public lookup blob to get incoming invites
+        const publicLookupBlobUrl = localStorage.getItem('0k_public_lookup_blob_url');
+        if (!publicLookupBlobUrl) {
+            $('#inv-box').innerHTML = '<p class="small text-muted text-center">No pending invitations.</p>';
+            return;
+        }
+
+        // Fetch the public lookup blob (which now contains invites_log)
+        const r = await fetch(publicLookupBlobUrl);
+        if (!r.ok) {
+            console.warn(`Failed to fetch public lookup blob for invites: ${r.statusText}`);
+            $('#inv-box').innerHTML = '<p class="small text-muted text-center">Error loading invites.</p>';
+            return;
+        }
+        const publicLookupData = await r.json();
+        const invites_log = publicLookupData.invites_log || [];
+
+        const pend = invites_log.filter(i => i.op === 'new' && !invites_log.find(j => j.ts === i.ts && j.op === 'accepted'));
         $('#inv-box').innerHTML = pend.length ?
-            pend.map(i => `<div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-secondary rounded">
-                <code class="text-light">${i.ts.slice(0, 8)}</code>
-                <button class="btn btn-sm btn-primary accept" data-ts="${i.ts}" data-url="${i.chat_url}">Accept</button>
+            // Removed bg-secondary from here to rely on Bootstrap theme
+            pend.map(i => `<div class="d-flex justify-content-between align-items-center mb-2 p-2 rounded">
+                <code class="text-light">${i.ts.slice(0, 8)} - From: ${i.fromShortUsername || i.fromSlug.slice(0, 8)}</code>
+                <button class="btn btn-sm btn-primary accept" data-ts="${i.ts}" data-chat-url="${i.chatUrl}" data-from-slug="${i.fromSlug}" data-from-email="${i.fromEmail}" data-from-short-username="${i.fromShortUsername}">Accept</button>
             </div>`).join('') :
             '<p class="small text-muted text-center">No pending invitations.</p>';
     } catch (e) {
@@ -365,58 +502,94 @@ setInterval(renderInvites, 30000);
 
 $('#inv-box').onclick = e => {
     if (e.target.classList.contains('accept')) {
-        const entry = { chat_url: e.target.dataset.url, ts: e.target.dataset.ts };
+        const entry = { 
+            chat_url: e.target.dataset.chatUrl, 
+            ts: e.target.dataset.ts,
+            fromSlug: e.target.dataset.fromSlug,
+            fromEmail: e.target.dataset.fromEmail,
+            fromShortUsername: e.target.dataset.fromShortUsername
+        };
         $('#nicknameModal').dataset.chatUrl = entry.chat_url;
         $('#nicknameModal').dataset.ts = entry.ts;
-        new bootstrap.Modal($('#nicknameModal')).show();
+        $('#nicknameModal').dataset.fromSlug = entry.fromSlug;
+        $('#nicknameModal').dataset.fromEmail = entry.fromEmail;
+        $('#nicknameModal').dataset.fromShortUsername = entry.fromShortUsername;
+        const nicknameModal = new bootstrap.Modal($('#nicknameModal'));
+        // Pre-fill nickname with sender's short username if available
+        $('#nicknameInput').value = entry.fromShortUsername || 'friend'; 
+        nicknameModal.show();
     }
 };
 
 $('#saveNicknameBtn').onclick = async () => {
     const chatUrl = $('#nicknameModal').dataset.chatUrl;
-    const nick = $('#nicknameModal').querySelector('#nicknameInput').value.trim();
-    if (!validator.isNonEmptyString(nick)) return showToast('Nickname cannot be empty.', 'warning');
+    const ts = $('#nicknameModal').dataset.ts;
+    const fromSlug = $('#nicknameModal').dataset.fromSlug;
+    const fromEmail = $('#nicknameModal').dataset.fromEmail;
+    const fromShortUsername = $('#nicknameModal').dataset.fromShortUsername;
+    const nick = $('#nicknameInput').value.trim();
 
+    if (!validator.isNonEmptyString(nick)) {
+        showToast('Nickname cannot be empty.', 'warning');
+        return;
+    }
+
+    const entry = { chat_url: chatUrl, ts: ts, fromSlug: fromSlug, fromEmail: fromEmail, fromShortUsername: fromShortUsername };
     toggleLoading($('#saveNicknameBtn'), true);
     try {
-        await acceptFlow({ chat_url: chatUrl, ts: $('#nicknameModal').dataset.ts }, nick);
+        await acceptFlow(entry, nick);
         showToast('Invitation accepted and nickname set!', 'success');
-        bootstrap.Modal.getInstance($('#nicknameModal')).hide();
+        const nicknameModal = bootstrap.Modal.getInstance($('#nicknameModal'));
+        if (nicknameModal) nicknameModal.hide();
         $('#nicknameInput').value = '';
     } catch (e) {
-        console.error('Error accepting invitation:', e);
         showToast('Error accepting invitation: ' + e.message, 'danger');
+        console.error('Error accepting invitation:', e);
     } finally {
         toggleLoading($('#saveNicknameBtn'), false);
     }
 };
 
+
+/* accept invite flow */
 async function acceptFlow(entry, nick) {
     try {
-        const raw = await fetch(entry.chat_url).then(r => r.text()).catch(() => null);
-        const m = raw?.match(/"fromSlug":"([^"]+)"/);
-        if (!m) {
-            console.error('Invalid invitation, could not extract fromSlug:', entry.chat_url);
-            throw new Error('Invalid or inaccessible invitation.');
-        }
-        const fromSlug = m[1];
-        const fromEmail = `${fromSlug}@${CFG.webhook_email_domain}`;
-
+        // Instead of fetching chat blob, we pass the info from the invite log directly
+        // The `fromSlug` and `fromEmail` are already in the `entry` from `renderInvites`
         await onIncomingWebhook({
             type: 'invite',
             chatUrl: entry.chat_url,
-            keyHex: await sha256(entry.ts + 'chat'),
-            fromSlug,
-            fromEmail
+            keyHex: await sha256(entry.ts + 'chat'), // Key derived from timestamp
+            fromSlug: entry.fromSlug, // Sender's webhook UUID
+            fromEmail: entry.fromEmail, // Sender's webhook email
+            fromShortUsername: entry.fromShortUsername // Sender's short username
         });
         await setNickname(entry.chat_url, nick);
 
-        const mySlug = localStorage.getItem('0k_webhook_slug');
-        const myEmail = localStorage.getItem('0k_webhook_email');
-        await fetch(`${CFG.webhook_base_url}/${fromSlug}`, {
+        // Mark invite as accepted in my public lookup blob
+        const publicLookupBlobUrl = localStorage.getItem('0k_public_lookup_blob_url');
+        if (publicLookupBlobUrl) {
+            const r = await fetch(publicLookupBlobUrl);
+            if (r.ok) {
+                const publicLookupData = await r.json();
+                publicLookupData.invites_log = publicLookupData.invites_log || [];
+                publicLookupData.invites_log.push({ ts: entry.ts, op: 'accepted' });
+                await fetch(publicLookupBlobUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(publicLookupData)
+                });
+            }
+        }
+
+        // Send acceptance confirmation to the sender's webhook UUID
+        const myWebhookSlug = localStorage.getItem('0k_webhook_slug');
+        const myWebhookEmail = localStorage.getItem('0k_webhook_email');
+
+        await fetch(`${CFG.webhook_base_url}/${entry.fromSlug}`, { // Send to sender's UUID via proxy
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'accepted', chatUrl: entry.chat_url, bySlug: mySlug, byEmail: myEmail })
+            body: JSON.stringify({ type: 'accepted', chatUrl: entry.chat_url, bySlug: myWebhookSlug, byEmail: myWebhookEmail })
         }).catch(e => console.warn('Error sending acceptance confirmation:', e));
 
         await renderChats();
@@ -427,29 +600,17 @@ async function acceptFlow(entry, nick) {
     }
 }
 
+/* tab close -> flush */
 window.addEventListener('beforeunload', () => {
-    if (currentChat) closeChat(currentChat);
+    if (currentChat) {
+        console.log('Closing chat on beforeunload:', currentChat.chat_url);
+        closeChat(currentChat);
+    }
 });
 
-$('#btn-logout').onclick = async () => {
-    toggleLoading($('#btn-logout'), true);
-    try {
-        await logout();
-        showToast('Logged out successfully!', 'success');
-        location.reload();
-    } catch (e) {
-        console.error('Error logging out:', e);
-        showToast('Error logging out: ' + e.message, 'danger');
-    } finally {
-        toggleLoading($('#btn-logout'), false);
-    }
-};
+/* logout is now handled by nav-logout click listener */
 
-if (isSession()) {
-    const u = localStorage.getItem('0k_username');
-    if (u) buildUI(u);
-}
-
+/* restore / initial load */
 document.addEventListener('DOMContentLoaded', () => {
     if (!document.getElementById('toast-container')) {
         const toastContainer = document.createElement('div');
@@ -457,5 +618,17 @@ document.addEventListener('DOMContentLoaded', () => {
         toastContainer.className = 'position-fixed bottom-0 end-0 p-3';
         toastContainer.style.zIndex = '1050';
         document.body.appendChild(toastContainer);
+    }
+
+    if (isSession()) {
+        const u = localStorage.getItem('0k_username');
+        if (u) {
+            console.log('Existing session, restoring UI for:', u);
+            showDashboardUI(u); // Show dashboard if session exists
+        } else {
+            showAuthUI(); // Fallback to auth if session exists but username is missing (shouldn't happen normally)
+        }
+    } else {
+        showAuthUI(); // Show auth UI if no session
     }
 });
