@@ -19,6 +19,7 @@ const {
     ensureChat, getChatMessages, onIncomingWebhook,
     setNickname, verifySnapshot, utils, db, cfg: CFG
 } = ok0;
+const { usernameToSlug } = utils;
 
 /* --- DOM helpers ----------------------------------------------------------- */
 const $ = s => document.querySelector(s);
@@ -184,7 +185,10 @@ function showAuthUI() {
     $('#dash-wrap').classList.add('d-none');
 
     // Hide Logout button in navbar
-    $('#nav-logout').classList.add('d-none');
+    const navLogoutBtn = $('#nav-logout');
+    if (navLogoutBtn) {
+        navLogoutBtn.classList.add('d-none');
+    }
 
     // Ensure login tab is active by default in the main content area
     const loginTabTrigger = document.querySelector('#auth-wrap .nav-tabs .nav-link[data-bs-target="#tab-log"]');
@@ -201,7 +205,10 @@ async function showDashboardUI(u) {
     $('#dash-wrap').classList.remove('d-none');
 
     // Show Logout button in navbar
-    $('#nav-logout').classList.remove('d-none');
+    const navLogoutBtn = $('#nav-logout');
+    if (navLogoutBtn) {
+        navLogoutBtn.classList.remove('d-none');
+    }
 
     $('#user-slug').textContent = u;
     const link = localStorage.getItem('0k_blob_url') || '#';
@@ -282,6 +289,7 @@ async function loginFlow() {
     toggleLoading($('#btn-log'), true);
     try {
         const username = await authenticate(tok);
+        localStorage.setItem('0k_extended_token', tok); // Store the extended token for session restoration
         showToast(`Authentication successful! Welcome, ${username}!`, 'success');
         console.log('Authentication successful for user:', username);
         await showDashboardUI(username); // Call the new function to manage UI state
@@ -295,8 +303,6 @@ async function loginFlow() {
 }
 
 /* ╔══════════════════════════════════════╗  DASHBOARD */
-// buildUI is now showDashboardUI, updated above
-
 /* Profile */
 async function loadProfile() {
     try {
@@ -316,7 +322,7 @@ async function renderChats() {
     try {
         const chats = (await db.profile.get('me'))?.data.chats || [];
         $('#chat-list').innerHTML = chats.length ?
-            chats.map(c => `<button class="list-group-item list-group-item-action" data-url="${c.chat_url}">${c.nickname || c.peerShortUsername || c.peerSlug || 'chat'}</button>`).join('') :
+            chats.map(c => `<button class="list-group-item list-group-item-action bg-dark text-light" data-url="${c.chat_url}">${c.nickname || c.peerShortUsername || c.peerSlug || 'chat'}</button>`).join('') :
             '<p class="small text-muted text-center">No chats.</p>';
     } catch (e) {
         console.error('Error rendering chat list:', e);
@@ -579,7 +585,7 @@ async function acceptFlow(entry, nick) {
         await fetch(`${CFG.webhook_base_url}/${entry.fromSlug}`, { // Send to sender's UUID via proxy
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'accepted', chatUrl: entry.chat_url, bySlug: myWebhookSlug, byEmail: myWebhookEmail })
+            body: JSON.stringify({ type: 'accepted', chatUrl: entry.chat_url, bySlug: myWebhookSlug, byEmail: myEmail })
         }).catch(e => console.warn('Error sending acceptance confirmation:', e));
 
         await renderChats();
@@ -599,7 +605,7 @@ window.addEventListener('beforeunload', () => {
 });
 
 /* restore / initial load */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     if (!document.getElementById('toast-container')) {
         const toastContainer = document.createElement('div');
         toastContainer.id = 'toast-container';
@@ -609,20 +615,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Navbar Logout Button - moved inside DOMContentLoaded
-    $('#nav-logout').onclick = async () => {
-        toggleLoading($('#nav-logout'), true);
-        try {
-            await logout();
-            showToast('Logged out successfully!', 'success');
-            console.log('User logged out.');
-            location.reload(); // Reload to reset UI state
-        } catch (e) {
-            showToast('Error logging out: ' + e.message, 'danger');
-            console.error('Error logging out:', e);
-        } finally {
-            toggleLoading($('#nav-logout'), false);
-        }
-    };
+    const navLogoutBtn = $('#nav-logout');
+    if (navLogoutBtn) {
+        navLogoutBtn.onclick = async () => {
+            toggleLoading(navLogoutBtn, true);
+            try {
+                await logout();
+                localStorage.removeItem('0k_extended_token'); // Clear the stored token on logout
+                showToast('Logged out successfully!', 'success');
+                console.log('User logged out.');
+                location.reload(); // Reload to reset UI state
+            } catch (e) {
+                showToast('Error logging out: ' + e.message, 'danger');
+                console.error('Error logging out:', e);
+            } finally {
+                toggleLoading(navLogoutBtn, false);
+            }
+        };
+    }
 
     // Add event listener for auth tab clicks to update styles
     const authNavTabs = document.querySelector('#auth-wrap .nav-tabs');
@@ -640,17 +650,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (isSession()) {
-        const u = localStorage.getItem('0k_username');
-        if (u) {
-            console.log('Existing session, restoring UI for:', u);
-            showDashboardUI(u); // Show dashboard if session exists
-        } else {
-            showAuthUI(); // Fallback to auth if session exists but username is missing (shouldn't happen normally)
+    const storedExtendedToken = localStorage.getItem('0k_extended_token');
+
+    if (storedExtendedToken && isSession()) {
+        try {
+            console.log('Attempting to restore session with stored token...');
+            const username = await authenticate(storedExtendedToken);
+            await showDashboardUI(username);
+            showToast('Session restored!', 'success');
+        } catch (e) {
+            console.error('Failed to restore session:', e);
+            showToast('Session expired or invalid, please log in again.', 'danger');
+            localStorage.removeItem('0k_extended_token'); // Clear invalid token
+            showAuthUI();
+            updateTabStyles('#auth-wrap .nav-tabs'); // Initial style update for auth tabs
         }
     } else {
-        showAuthUI(); // Show auth UI if no session
-        // Initial style update for auth tabs when not logged in
-        updateTabStyles('#auth-wrap .nav-tabs');
+        console.log('No active session or stored token found, showing auth UI.');
+        showAuthUI();
+        updateTabStyles('#auth-wrap .nav-tabs'); // Initial style update for auth tabs
     }
 });
