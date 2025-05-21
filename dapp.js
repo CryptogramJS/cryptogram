@@ -197,23 +197,6 @@ async function showDashboardUI(u) {
     await renderInvites();
 }
 
-/* Navbar Logout Button */
-$('#nav-logout').onclick = async () => {
-    toggleLoading($('#nav-logout'), true);
-    try {
-        await logout();
-        showToast('Logged out successfully!', 'success');
-        console.log('User logged out.');
-        location.reload(); // Reload to reset UI state
-    } catch (e) {
-        showToast('Error logging out: ' + e.message, 'danger');
-        console.error('Error logging out:', e);
-    } finally {
-        toggleLoading($('#nav-logout'), false);
-    }
-};
-
-
 /* ╔══════════════════════════════════════╗  REGISTER */
 $('#btn-reg').onclick = async () => {
     const captchaInput = $('#cap-inp-reg').value.trim();
@@ -607,6 +590,22 @@ document.addEventListener('DOMContentLoaded', () => {
         toastContainer.style.zIndex = '1050';
         document.body.appendChild(toastContainer);
     }
+
+    // Navbar Logout Button - moved inside DOMContentLoaded
+    $('#nav-logout').onclick = async () => {
+        toggleLoading($('#nav-logout'), true);
+        try {
+            await logout();
+            showToast('Logged out successfully!', 'success');
+            console.log('User logged out.');
+            location.reload(); // Reload to reset UI state
+        } catch (e) {
+            showToast('Error logging out: ' + e.message, 'danger');
+            console.error('Error logging out:', e);
+        } finally {
+            toggleLoading($('#nav-logout'), false);
+        }
+    };
 
     if (isSession()) {
         const u = localStorage.getItem('0k_username');
