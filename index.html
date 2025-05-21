@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
 <meta charset="utf-8"/>
 <title>Cryptogram – beta</title>
@@ -7,15 +7,22 @@
 <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/vapor/bootstrap.min.css" rel="stylesheet"/>
 <style>
     html,body{height:100%}
-    body{display:flex;flex-direction:column;min-height:100%;background:url("https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1350&q=80") center/cover fixed}
+    body{display:flex;flex-direction:column;min-height:100%;background:url("https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1350&q=80") center/cover,fixed}
     main{flex:1}
     .glass{background:rgba(0,0,0,.6);backdrop-filter:blur(8px)}
     .chat-scroll{max-height:60vh;overflow-y:auto}
-    /* colour-agnostic bubbles use Bootstrap CSS variables */
+    /* Removed specific color overrides for chat bubbles to rely on Bootstrap theme */
     .bubble{display:inline-block;padding:.5rem .75rem;border-radius:1rem;max-width:85%;word-wrap:break-word}
-    .bubble.me{background:var(--bs-primary);color:#fff;align-self:flex-end;text-align:right}
-    .bubble.peer{background:var(--bs-secondary);color:#fff;align-self:flex-start;text-align:left}
+    .bubble.me{background:#0d6efd;color:#fff;align-self:flex-end;text-align:right}
+    .bubble.peer{background:#6c757d;color:#fff;align-self:flex-start;text-align:left}
     #toast-container{z-index:1080}
+    /* Specific styling for captcha images */
+    .captcha-img {
+        width: 160px; /* Fixed width */
+        height: 50px; /* Fixed height */
+        display: block; /* Ensures it takes its own line */
+        margin-bottom: 0.5rem; /* Space below the image */
+    }
 </style>
 </head>
 <body>
@@ -26,22 +33,20 @@
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navcol">
-      <ul class="navbar-nav ms-auto">
-        <!-- shown when NOT logged in -->
-        <li class="nav-item" id="nav-login-li"><a class="nav-link active" data-bs-toggle="tab" href="#tab-log">Login</a></li>
-        <li class="nav-item" id="nav-register-li"><a class="nav-link" data-bs-toggle="tab" href="#tab-reg">Register</a></li>
-        <!-- shown when logged in -->
-        <li class="nav-item d-none" id="nav-logout-li"><button id="nav-logout" class="btn btn-link nav-link">Logout</button></li>
+      <ul class="navbar-nav ms-auto" id="auth-nav-links">
+        <li class="nav-item"><a class="nav-link" href="#" id="nav-link-login">Login</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" id="nav-link-register">Register</a></li>
+      </ul>
+      <ul class="navbar-nav" id="logged-in-nav-links" style="display: none;">
+        <li class="nav-item"><button id="nav-logout" class="btn btn-link nav-link">Logout</button></li>
       </ul>
     </div>
   </div>
 </nav>
 <main class="container py-4">
   <h1 class="text-center text-white display-4 mb-4">Secure chat for everyone</h1>
-  <!-- Authentication panes -->
   <div id="auth-wrap" class="glass rounded-4 p-4 shadow-lg">
     <div class="tab-content">
-      <!-- LOGIN TAB -->
       <div class="tab-pane fade show active" id="tab-log">
         <div class="row g-4">
           <div class="col-md-6 offset-md-3">
@@ -58,7 +63,6 @@
           </div>
         </div>
       </div>
-      <!-- REGISTER TAB -->
       <div class="tab-pane fade" id="tab-reg">
         <div class="row g-4">
           <div class="col-md-6 offset-md-3">
@@ -81,7 +85,6 @@
       </div>
     </div>
   </div>
-  <!-- Dashboard (shown after login) -->
   <div id="dash-wrap" class="d-none">
     <ul class="nav nav-tabs nav-fill mb-3">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-chat">Chat</button></li>
@@ -89,7 +92,6 @@
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-me">Profile</button></li>
     </ul>
     <div class="tab-content glass rounded-4 p-4 shadow-lg">
-      <!-- Chat Pane -->
       <div class="tab-pane fade show active" id="tab-chat">
         <div class="d-flex mb-3">
           <button class="btn btn-outline-info ms-auto" data-bs-toggle="modal" data-bs-target="#inviteModal">Invite +</button>
@@ -104,11 +106,11 @@
             </div>
           </div>
           <div class="col-md-8 d-flex flex-column">
-            <div id="chat-empty" class="card h-100 d-flex align-items-center justify-content-center text-muted bg-dark">
+            <div id="chat-empty" class="card h-100 d-flex align-items-center justify-content-center text-muted">
               <em>No chat open…</em>
             </div>
             <div id="chat-pane" class="d-none flex-grow-1 d-flex flex-column">
-              <div id="chat-msgs" class="card flex-grow-1 p-3 bg-dark chat-scroll d-flex flex-column gap-2"></div>
+              <div id="chat-msgs" class="card flex-grow-1 p-3 chat-scroll d-flex flex-column gap-2"></div>
               <div class="input-group mt-3">
                 <input id="chat-input" class="form-control" placeholder="Type message…">
                 <button id="btn-send" class="btn btn-primary" disabled>Send</button>
@@ -117,14 +119,12 @@
           </div>
         </div>
       </div>
-      <!-- Invites Pane -->
       <div class="tab-pane fade" id="tab-inv">
         <h4 class="mb-3 text-center">Pending invites</h4>
         <div id="inv-box" class="row g-4">
           <p class="small text-muted text-center">Loading invites…</p>
         </div>
       </div>
-      <!-- Profile Pane -->
       <div class="tab-pane fade" id="tab-me">
         <div class="row g-4">
           <div class="col-md-4">
@@ -150,8 +150,6 @@
     </div>
   </div>
 </main>
-
-<!-- Modals -->
 <div class="modal fade" id="inviteModal" tabindex="-1" aria-labelledby="inviteModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content bg-dark">
@@ -160,7 +158,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body py-4">
-        <input id="slug-invite" class="form-control mb-3" placeholder="Friend's slug">
+        <input id="slug-invite" class="form-control mb-3" placeholder="Friend's username">
         <div id="invite-status" class="small text-info text-center"></div>
       </div>
       <div class="modal-footer border-0">
@@ -187,8 +185,6 @@
   </div>
 </div>
 <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container"></div>
-
-<!-- Scripts -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.5.4/sodium.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.4/dist/dexie.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/automerge@2.3.1/dist/automerge.min.js"></script>
