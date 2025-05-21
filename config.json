@@ -1,7 +1,7 @@
 {
   "jsonblob_endpoint": "https://jsonblob.com/api/jsonBlob",
-  "webhook_base_url": "https://webhook.site",
-  "webhook_create_endpoint": "https://webhook.site/token",
+  "webhook_base_url": "https://api.allorigins.win/raw?url=https://webhook.site",
+  "webhook_create_endpoint": "https://api.allorigins.win/raw?url=https://webhook.site/token",
   "webhook_email_domain": "emailhook.site",
   "opencaptcha_endpoint": "https://api.opencaptcha.io/captcha",
   "captcha_max_attempts": 5,
