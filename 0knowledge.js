@@ -12,15 +12,14 @@
 
     /* UTILS */
     const utils = {
-        slugToUsername: s => BigInt(s).toString(36),
+        slugToUsername: s => BigInt('0x' + s.replace(/-/g, '')).toString(36),
         usernameToSlug(u) {
             let v = 0n;
             for (const ch of u) v = v * 36n + BigInt(parseInt(ch, 36));
             return v.toString(10);
         },
         sha256: str => window.sha256(str),
-        sha256Raw: buf => Array.from(sodium.crypto_generichash(32, buf))
-            .map(b => b.toString(16).padStart(2, '0')).join('')
+        sha256Raw: buf => Array.from(sodium.crypto_generichash(32, buf)).map(b => b.toString(16).padStart(2, '0')).join('')
     };
 
     /* STATE */
