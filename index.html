@@ -11,12 +11,10 @@
     main{flex:1}
     .glass{background:rgba(0,0,0,.6);backdrop-filter:blur(8px)}
     .chat-scroll{max-height:60vh;overflow-y:auto}
-    /* Removed specific color overrides for chat bubbles to rely on Bootstrap theme */
     .bubble{display:inline-block;padding:.5rem .75rem;border-radius:1rem;max-width:85%;word-wrap:break-word}
     .bubble.me{background:#0d6efd;color:#fff;align-self:flex-end;text-align:right}
     .bubble.peer{background:#6c757d;color:#fff;align-self:flex-start;text-align:left}
     #toast-container{z-index:1080}
-    /* Specific styling for captcha images */
     .captcha-img {
         width: 160px; /* Fixed width */
         height: 50px; /* Fixed height */
@@ -34,10 +32,14 @@
     </button>
     <div class="collapse navbar-collapse" id="navcol">
       <ul class="navbar-nav ms-auto" id="auth-nav-links">
-        <li class="nav-item"><a class="nav-link" href="#" id="nav-link-login">Login</a></li>
-        <li class="nav-item"><a class="nav-link" href="#" id="nav-link-register">Register</a></li>
+        <li class="nav-item">
+          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-log" id="nav-tab-login">Login</button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg" id="nav-tab-register">Register</button>
+        </li>
       </ul>
-      <ul class="navbar-nav" id="logged-in-nav-links" style="display: none;">
+      <ul class="navbar-nav ms-auto d-none" id="logged-in-nav-links">
         <li class="nav-item"><button id="nav-logout" class="btn btn-link nav-link">Logout</button></li>
       </ul>
     </div>
