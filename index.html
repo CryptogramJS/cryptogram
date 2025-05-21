@@ -31,15 +31,12 @@
       <span class="navbar-toggler-icon"></span>
     </button>
     <div class="collapse navbar-collapse" id="navcol">
-      <ul class="navbar-nav ms-auto" id="auth-nav-links">
+      <ul class="navbar-nav me-auto">
         <li class="nav-item">
-          <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-log" id="nav-tab-login">Login</button>
-        </li>
-        <li class="nav-item">
-          <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg" id="nav-tab-register">Register</button>
+          <a class="nav-link" href="https://github.com/CryptogramJS/cryptogram" target="_blank" rel="noopener noreferrer">GitHub Repo</a>
         </li>
       </ul>
-      <ul class="navbar-nav ms-auto d-none" id="logged-in-nav-links">
+      <ul class="navbar-nav d-none" id="logged-in-nav-links">
         <li class="nav-item"><button id="nav-logout" class="btn btn-link nav-link">Logout</button></li>
       </ul>
     </div>
@@ -48,6 +45,10 @@
 <main class="container py-4">
   <h1 class="text-center text-white display-4 mb-4">Secure chat for everyone</h1>
   <div id="auth-wrap" class="glass rounded-4 p-4 shadow-lg">
+    <ul class="nav nav-tabs nav-fill mb-4">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-log">Login</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-reg">Register</button></li>
+    </ul>
     <div class="tab-content">
       <div class="tab-pane fade show active" id="tab-log">
         <div class="row g-4">
