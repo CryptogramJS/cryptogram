@@ -34,7 +34,7 @@ let blobUrl = "";
 let myUsername = "";
 let myPubKeyHex = "";
 let hookSlug = "";
-let hookUrl = "";
+let hookUrl = ""; // Aceasta va fi acum ruta directă
 let hookEmail = "";
 
 /* STATE GATEWAY */
@@ -84,11 +84,14 @@ const cacheProfile = () => db.profile.put({ key: "me", data: personal }).catch((
 
 /* WEBHOOK */
 async function newWebhookSession() {
+  // AICI folosim webhook_create_endpoint, care are allorigins.win
   const r = await fetch(CFG.webhook_create_endpoint, { method: "POST" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const j = await r.json();
   hookSlug  = j.uuid;
-  hookUrl   = `${CFG.webhook_base_url}/${hookSlug}`;
+  // ATENȚIE AICI: hookUrl va fi acum ruta DIRECTĂ de webhook.site
+  // Această variabilă (S.hookUrl) va fi folosită în p2p.js pentru long polling
+  hookUrl   = `${CFG.webhook_base_url_direct}/${hookSlug}`; // Folosim CFG.webhook_base_url_direct
   hookEmail = `${hookSlug}@${CFG.webhook_email_domain}`;
   localStorage.setItem("0k_webhook_slug", hookSlug);
   localStorage.setItem("0k_webhook_url",  hookUrl);
@@ -127,7 +130,7 @@ async function tsaStamp(hashBuf) {
     body   : tsqDer
   });
   if (!resp.ok) return null;
-  return new Uint8Array(await resp.arrayBuffer());   // TSR bytes
+  return new Uint8Array(await resp.arrayBuffer());    // TSR bytes
 }
 
 /* ACCOUNT */
@@ -135,7 +138,7 @@ async function createAccount() {
   const seed = sodium.randombytes_buf(32);
   const entropyHex = sodium.to_hex(seed);
   const { publicKey, sym } = keysFromSeed(seed);
-  secretKey  = sym;
+  secretKey    = sym;
   myPubKeyHex= sodium.to_hex(publicKey);
   personal = {
     pubkey : sodium.to_base64(publicKey),
@@ -153,13 +156,14 @@ async function createAccount() {
 async function authenticate(ext) {
   const { entropy, slug } = JSON.parse(sodium.to_string(sodium.from_base64(ext)));
   const { publicKey, sym } = keysFromSeed(seedFromHex(entropy));
-  secretKey   = sym;
+  secretKey     = sym;
   myPubKeyHex = sodium.to_hex(publicKey);
-  blobUrl     = `${CFG.jsonblob_endpoint}/${slug}`;
-  personal    = unlockPersonal(await fetch(blobUrl).then(r=>r.json()));
+  blobUrl       = `${CFG.jsonblob_endpoint}/${slug}`;
+  personal      = unlockPersonal(await fetch(blobUrl).then(r=>r.json()));
   personal.session.last_login = Date.now();
   await putPersonalBlob();
   cacheProfile();
+  // Aici se generează noul webhook session și se setează hookUrl corect
   await newWebhookSession();
   myUsername = utils.slugToUsername(hookSlug);
   localStorage.setItem("0k_blob_url", blobUrl);
