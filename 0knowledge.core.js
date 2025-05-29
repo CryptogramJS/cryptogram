@@ -34,7 +34,7 @@ let blobUrl = "";
 let myUsername = "";
 let myPubKeyHex = "";
 let hookSlug = "";
-let hookUrl = ""; // Aceasta va fi acum ruta directă
+let hookUrl = ""; // This will now include allorigins.win
 let hookEmail = "";
 
 /* STATE GATEWAY */
@@ -84,14 +84,13 @@ const cacheProfile = () => db.profile.put({ key: "me", data: personal }).catch((
 
 /* WEBHOOK */
 async function newWebhookSession() {
-  // AICI folosim webhook_create_endpoint, care are allorigins.win
+  // Use webhook_create_endpoint (with allorigins.win) for new token generation
   const r = await fetch(CFG.webhook_create_endpoint, { method: "POST" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const j = await r.json();
   hookSlug  = j.uuid;
-  // ATENȚIE AICI: hookUrl va fi acum ruta DIRECTĂ de webhook.site
-  // Această variabilă (S.hookUrl) va fi folosită în p2p.js pentru long polling
-  hookUrl   = `${CFG.webhook_base_url_direct}/${hookSlug}`; // Folosim CFG.webhook_base_url_direct
+  // Set hookUrl to use CFG.webhook_base_url (which includes allorigins.win)
+  hookUrl   = `${CFG.webhook_base_url}/${hookSlug}`;
   hookEmail = `${hookSlug}@${CFG.webhook_email_domain}`;
   localStorage.setItem("0k_webhook_slug", hookSlug);
   localStorage.setItem("0k_webhook_url",  hookUrl);
@@ -163,8 +162,7 @@ async function authenticate(ext) {
   personal.session.last_login = Date.now();
   await putPersonalBlob();
   cacheProfile();
-  // Aici se generează noul webhook session și se setează hookUrl corect
-  await newWebhookSession();
+  await newWebhookSession(); // Generates and sets S.hookUrl to use CFG.webhook_base_url
   myUsername = utils.slugToUsername(hookSlug);
   localStorage.setItem("0k_blob_url", blobUrl);
   localStorage.setItem("0k_username", myUsername);
