@@ -20,12 +20,6 @@ const DEF_FALLBACK = 30000;
 
 // Define static paths to be set on the user's personal webhook
 const STATIC_WEBHOOK_PATHS = ['invite', 'accepted', 'declined', 'message', 'flush'];
-const MAX_PATH_SET_RETRIES = 5; // Max attempts to set each static path
-const PATH_SET_RETRY_DELAY = 1000; // Delay between retries in ms
-
-// Flag to ensure polling starts only once after successful setup
-let pollingStarted = false;
-let pathSetupInProgress = false; // Prevent concurrent path setup attempts
 
 /* QUEUES */
 const pending        = {};
@@ -136,6 +130,7 @@ function flushPending(chat){
   if (!chat.peerSlug) return;
   const q = pending[chat.chat_url] || [];
   while (q.length){
+    // Send to the other client's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
@@ -143,6 +138,7 @@ function flushPendingOffline(chat){
   if (!chat.peerSlug) return;
   const q = pendingOffline[chat.chat_url] || [];
   while (q.length){
+    // Send to the other client's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
@@ -177,11 +173,13 @@ async function sendInvite(friendSlug){
   S.personal.chats.push({chat_url:chatUrl,key_hex:keyHex,peerSlug:null,peerEmail:null,nickname:null});
   await ok0.putPersonalBlob(); ok0.db.profile.put({key:"me",data:S.personal});
   const invite={type:"invite",chatUrl,keyHex,ts:ts_hex,fromSlug:S.hookSlug,fromEmail:S.hookEmail};
-  fetch(`${CFG.webhook_base_url}/${friendSlug}/invite`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
+  // Send invite to the friend's webhook.site route THROUGH allorigins.win, to the /invite static path
+  await fetch(`${CFG.webhook_base_url}/${friendSlug}/invite`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
 }
 
 async function declineInvite(chatUrl,inviterSlug){
-  fetch(`${CFG.webhook_base_url}/${inviterSlug}/declined`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
+  // Send decline to the inviter's webhook.site route THROUGH allorigins.win, to the /declined static path
+  await fetch(`${CFG.webhook_base_url}/${inviterSlug}/declined`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
   const idx=S.personal.chats.findIndex(c=>c.chat_url===chatUrl);
   if(idx!==-1){S.personal.chats.splice(idx,1);await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});}
 }
@@ -199,6 +197,7 @@ async function sendMessage(chat,txt){
 
   const queue=(!chat.peerSlug||!navigator.onLine)?(pendingOffline[chat.chat_url] ||= []):(pending[chat.chat_url] ||= []);
   if(chat.peerSlug&&navigator.onLine){
+    // Send message to the peer's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>queue.push(enc));
   }else queue.push(enc);
 }
@@ -227,6 +226,7 @@ async function verifySnapshot(chatUrl,ts){
 async function closeChat(chat){
   await flushChat(chat.chat_url);
   if(chat.peerSlug){
+    // Send flush to the peer's webhook.site route THROUGH allorigins.win, to the /flush static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/flush`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"flush",chatUrl:chat.chat_url,ts:Date.now()})}).catch(()=>{});
   }
 }
@@ -242,6 +242,7 @@ async function onIncomingWebhook(webhookRequest){
       S.personal.chats.push({chat_url:msg.chatUrl,key_hex:msg.keyHex,peerSlug:msg.fromSlug,peerEmail:msg.fromEmail,nickname:null});
       await ok0.putPersonalBlob(); ok0.db.profile.put({key:"me",data:S.personal});
     }
+    // Acknowledge invite by sending 'accepted' to the sender THROUGH allorigins.win, to the /accepted static path
     fetch(`${CFG.webhook_base_url}/${msg.fromSlug}/accepted`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"accepted",chatUrl:msg.chatUrl,bySlug:S.hookSlug,byEmail:S.hookEmail})}).catch(()=>{});
     break;
   }
@@ -297,20 +298,11 @@ document.addEventListener("ok0:newSlug",updateMyEndpointAll);
 
 /* Set Static Webhook Paths on Login */
 async function setStaticWebhookPaths() {
-  if (pathSetupInProgress) {
-    console.log("Static path setup already in progress, skipping redundant call.");
-    return false; // Already attempting, avoid race conditions
-  }
-
   if (!S.hookUrl || !S.sessionToken) {
-    console.warn("setStaticWebhookPaths called without S.hookUrl or S.sessionToken. Cannot proceed.");
-    return false;
+    return;
   }
 
-  pathSetupInProgress = true;
   console.log("Attempting to set static webhook paths for token:", S.hookSlug);
-  let allPathsSetSuccessfully = true;
-
   for (const path of STATIC_WEBHOOK_PATHS) {
     const fullPath = `/${path}`;
     const endpoint = `${S.hookUrl}/paths${fullPath}`;
@@ -319,73 +311,35 @@ async function setStaticWebhookPaths() {
       response_content_type: "application/json"
     };
 
-    let attempts = 0;
-    let pathSet = false;
-    while (attempts < MAX_PATH_SET_RETRIES && !pathSet) {
-      attempts++;
-      console.log(`Setting path ${fullPath} (attempt ${attempts}/${MAX_PATH_SET_RETRIES})...`);
-      try {
-        const r = await fetch(endpoint, {
-          method: "PUT",
-          headers: {
-            'Content-Type': 'application/json',
-            '0K-Token': S.sessionToken
-          },
-          body: JSON.stringify(payload)
-        });
+    try {
+      const r = await fetch(endpoint, {
+        method: "PUT",
+        headers: {
+          'Content-Type': 'application/json',
+          '0K-Token': S.sessionToken
+        },
+        body: JSON.stringify(payload)
+      });
 
-        if (r.ok) {
-          console.log(`%cSuccessfully set webhook path: ${fullPath}`, "color: green;");
-          pathSet = true;
-        } else {
-          const errorText = await r.text();
-          console.warn(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}. Retrying...`);
-        }
-      } catch (e) {
-        console.warn(`Error setting webhook path ${fullPath}:`, e, `. Retrying...`);
+      if (r.ok) {
+        console.log(`Successfully set webhook path: ${fullPath}`);
+      } else {
+        const errorText = await r.text();
+        console.error(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}`);
       }
-
-      if (!pathSet && attempts < MAX_PATH_SET_RETRIES) {
-        await new Promise(r => setTimeout(r, PATH_SET_RETRY_DELAY)); // Wait before retrying
-      }
+    } catch (e) {
+      console.error(`Error setting webhook path ${fullPath}:`, e);
     }
-
-    if (!pathSet) {
-      allPathsSetSuccessfully = false;
-      console.error(`%cFailed to set webhook path ${fullPath} after ${MAX_PATH_SET_RETRIES} attempts.`, "color: red; font-weight: bold;");
-    }
-  }
-
-  pathSetupInProgress = false; // Reset flag
-  if (allPathsSetSuccessfully) {
-    console.log("%cAll static webhook paths configured successfully!", "color: green; font-weight: bold;");
-    return true; // Signal overall success
-  } else {
-    console.error("%cFailed to configure all static webhook paths.", "color: red; font-weight: bold;");
-    return false; // Signal overall failure
   }
 }
 
+document.addEventListener("ok0:newSlug", setStaticWebhookPaths);
+
 /* LONG-POLL */
 let lastPoll=0;
-async function startPolling() {
-  if (pollingStarted) {
-    return; // Ensure polling starts only once
-  }
-  pollingStarted = true;
-  console.log("%cStarting long-polling process...", "color: blue; font-weight: bold;");
-
+(async function poll(){
   for(;;){
-    // Basic check for session still being active inside the loop
-    if(!S.hookUrl || !S.sessionToken){
-        console.warn("Polling halted: Hook URL or session token is no longer available. Attempting to restart setup...");
-        pollingStarted = false; // Allow restart
-        // Try to re-trigger setup if session is lost, it will eventually call startPolling again if successful
-        document.dispatchEvent(new Event("ok0:newSlug"));
-        await new Promise(r=>setTimeout(r, DEF_FALLBACK));
-        continue;
-    }
-
+    if(!S.hookUrl || !S.sessionToken){await new Promise(r=>setTimeout(r,2000));continue;}
     try{
       const url=`${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`;
       const r=await fetch(url,{
@@ -418,9 +372,6 @@ async function startPolling() {
         console.warn(`Polling failed: HTTP ${r.status} - ${r.statusText}`);
         if (r.status === 401 || r.status === 404) {
           console.error("Authentication or token issue during polling. Consider re-authenticating.");
-          // In case of auth error, allow re-auth flow to potentially re-trigger polling.
-          pollingStarted = false; // Allow poll to restart after re-auth
-          // No need to dispatch "ok0:newSlug" here, as 0knowledge.core.js should handle auth refresh.
         }
       }
     }catch(e){
@@ -428,22 +379,7 @@ async function startPolling() {
     }
     await new Promise(r=>setTimeout(r,3000));
   }
-}
-
-// Main initialization logic for p2p.js related to session and polling
-document.addEventListener("ok0:newSlug", async () => {
-    // This listener ensures we have S.hookUrl and S.sessionToken
-    // setStaticWebhookPaths will handle retries internally.
-    const pathsSuccessfullySet = await setStaticWebhookPaths();
-
-    if (pathsSuccessfullySet) {
-        // Only start polling if paths were set successfully
-        startPolling();
-    } else {
-        console.error("%cPolling will NOT start due to failure in configuring static webhook paths.", "color: red; font-weight: bold;");
-    }
-});
-
+})();
 
 /* ONLINE EVENT */
 window.addEventListener("online",async()=>{
