@@ -1,14 +1,17 @@
 {
   "jsonblob_endpoint": "https://jsonblob.com/api/jsonBlob",
+
   "webhook_base_url": "https://api.allorigins.win/raw?url=https://webhook.site",
   "webhook_base_url_direct": "https://webhook.site",
   "webhook_create_endpoint": "https://api.allorigins.win/raw?url=https://webhook.site/token",
   "webhook_email_domain": "emailhook.site",
+
   "opencaptcha_endpoint": "https://api.opencaptcha.io/captcha",
   "captcha_max_attempts": 5,
   "captcha_cooldown_ms": 10000,
-  "ots_stamp_endpoint": "https://alice.btc.ots.im/v3/stamp",
-  "ots_proof_endpoint": "https://alice.btc.ots.im/v3/proof/",
+
+  "tsa_endpoint": "https://freetsa.org/tsr",
+
   "token_lifetime_ms": 3600000,
   "chat_sync_interval_ms": 3000,
   "chat_write_fallback_ms": 30000,
