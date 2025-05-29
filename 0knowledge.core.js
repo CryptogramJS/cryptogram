@@ -34,8 +34,9 @@ let blobUrl = "";
 let myUsername = "";
 let myPubKeyHex = "";
 let hookSlug = "";
-let hookUrl = ""; // This will now include allorigins.win
+let hookUrl = ""; // This will now be the DIRECT webhook.site URL for polling
 let hookEmail = "";
+let sessionToken = ""; // Store the session token
 
 /* STATE GATEWAY */
 const _state = {};
@@ -47,7 +48,8 @@ Object.defineProperties(_state, {
   myPubKeyHex: { get: () => myPubKeyHex, set: v => myPubKeyHex= v },
   hookSlug:    { get: () => hookSlug,    set: v => hookSlug   = v },
   hookUrl:     { get: () => hookUrl,     set: v => hookUrl    = v },
-  hookEmail:   { get: () => hookEmail,   set: v => hookEmail  = v }
+  hookEmail:   { get: () => hookEmail,   set: v => hookEmail  = v },
+  sessionToken:{ get: () => sessionToken,set: v => sessionToken = v }
 });
 
 /* PERSONAL BLOB */
@@ -84,13 +86,13 @@ const cacheProfile = () => db.profile.put({ key: "me", data: personal }).catch((
 
 /* WEBHOOK */
 async function newWebhookSession() {
-  // Use webhook_create_endpoint (with allorigins.win) for new token generation
+  // Use CFG.webhook_create_endpoint (which uses allorigins.win) to CREATE the webhook
   const r = await fetch(CFG.webhook_create_endpoint, { method: "POST" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   const j = await r.json();
   hookSlug  = j.uuid;
-  // Set hookUrl to use CFG.webhook_base_url (which includes allorigins.win)
-  hookUrl   = `${CFG.webhook_base_url}/${hookSlug}`;
+  // HookUrl is now the DIRECT webhook.site URL, used for your own polling
+  hookUrl   = `https://webhook.site/${hookSlug}`; // No allorigins.win here
   hookEmail = `${hookSlug}@${CFG.webhook_email_domain}`;
   localStorage.setItem("0k_webhook_slug", hookSlug);
   localStorage.setItem("0k_webhook_url",  hookUrl);
@@ -102,6 +104,7 @@ async function newWebhookSession() {
 function setSessionToken(ttl) {
   const rnd = [...crypto.getRandomValues(new Uint8Array(16))]
       .map(b => b.toString(16).padStart(2,"0")).join("");
+  sessionToken = rnd; // Store in state
   localStorage.setItem("0k_token", rnd);
   localStorage.setItem("0k_token_exp", (Date.now() + ttl).toString());
 }
@@ -162,11 +165,11 @@ async function authenticate(ext) {
   personal.session.last_login = Date.now();
   await putPersonalBlob();
   cacheProfile();
-  await newWebhookSession(); // Generates and sets S.hookUrl to use CFG.webhook_base_url
+  await newWebhookSession(); // Generates and sets S.hookUrl to be the DIRECT webhook.site URL
   myUsername = utils.slugToUsername(hookSlug);
   localStorage.setItem("0k_blob_url", blobUrl);
   localStorage.setItem("0k_username", myUsername);
-  setSessionToken(CFG.token_lifetime_ms);
+  setSessionToken(CFG.token_lifetime_ms); // Also stores in S.sessionToken
   return myUsername;
 }
 
@@ -175,7 +178,7 @@ async function logout() {
   ["0k_webhook_slug","0k_webhook_url","0k_webhook_email","0k_token","0k_token_exp","0k_blob_url","0k_username"]
   .forEach(k=>localStorage.removeItem(k));
   await db.delete();
-  personal = secretKey = blobUrl = myUsername = "";
+  personal = secretKey = blobUrl = myUsername = sessionToken = "";
 }
 
 /* EXPORT */
