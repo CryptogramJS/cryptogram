@@ -20,9 +20,12 @@ const DEF_FALLBACK = 30000;
 
 // Define static paths to be set on the user's personal webhook
 const STATIC_WEBHOOK_PATHS = ['invite', 'accepted', 'declined', 'message', 'flush'];
+const MAX_PATH_SET_RETRIES = 5; // Max attempts to set each static path
+const PATH_SET_RETRY_DELAY = 1000; // Delay between retries in ms
 
 // Flag to ensure polling starts only once after successful setup
 let pollingStarted = false;
+let pathSetupInProgress = false; // Prevent concurrent path setup attempts
 
 /* QUEUES */
 const pending        = {};
@@ -294,12 +297,17 @@ document.addEventListener("ok0:newSlug",updateMyEndpointAll);
 
 /* Set Static Webhook Paths on Login */
 async function setStaticWebhookPaths() {
-  if (!S.hookUrl || !S.sessionToken) {
-    // This should ideally not happen if called via ok0:newSlug listener
-    console.warn("setStaticWebhookPaths called without S.hookUrl or S.sessionToken.");
-    return;
+  if (pathSetupInProgress) {
+    console.log("Static path setup already in progress, skipping redundant call.");
+    return false; // Already attempting, avoid race conditions
   }
 
+  if (!S.hookUrl || !S.sessionToken) {
+    console.warn("setStaticWebhookPaths called without S.hookUrl or S.sessionToken. Cannot proceed.");
+    return false;
+  }
+
+  pathSetupInProgress = true;
   console.log("Attempting to set static webhook paths for token:", S.hookSlug);
   let allPathsSetSuccessfully = true;
 
@@ -311,35 +319,50 @@ async function setStaticWebhookPaths() {
       response_content_type: "application/json"
     };
 
-    try {
-      const r = await fetch(endpoint, {
-        method: "PUT",
-        headers: {
-          'Content-Type': 'application/json',
-          '0K-Token': S.sessionToken
-        },
-        body: JSON.stringify(payload)
-      });
+    let attempts = 0;
+    let pathSet = false;
+    while (attempts < MAX_PATH_SET_RETRIES && !pathSet) {
+      attempts++;
+      console.log(`Setting path ${fullPath} (attempt ${attempts}/${MAX_PATH_SET_RETRIES})...`);
+      try {
+        const r = await fetch(endpoint, {
+          method: "PUT",
+          headers: {
+            'Content-Type': 'application/json',
+            '0K-Token': S.sessionToken
+          },
+          body: JSON.stringify(payload)
+        });
 
-      if (r.ok) {
-        console.log(`Successfully set webhook path: ${fullPath}`);
-      } else {
-        allPathsSetSuccessfully = false;
-        const errorText = await r.text();
-        console.error(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}`);
+        if (r.ok) {
+          console.log(`%cSuccessfully set webhook path: ${fullPath}`, "color: green;");
+          pathSet = true;
+        } else {
+          const errorText = await r.text();
+          console.warn(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}. Retrying...`);
+        }
+      } catch (e) {
+        console.warn(`Error setting webhook path ${fullPath}:`, e, `. Retrying...`);
       }
-    } catch (e) {
+
+      if (!pathSet && attempts < MAX_PATH_SET_RETRIES) {
+        await new Promise(r => setTimeout(r, PATH_SET_RETRY_DELAY)); // Wait before retrying
+      }
+    }
+
+    if (!pathSet) {
       allPathsSetSuccessfully = false;
-      console.error(`Error setting webhook path ${fullPath}:`, e);
+      console.error(`%cFailed to set webhook path ${fullPath} after ${MAX_PATH_SET_RETRIES} attempts.`, "color: red; font-weight: bold;");
     }
   }
 
+  pathSetupInProgress = false; // Reset flag
   if (allPathsSetSuccessfully) {
     console.log("%cAll static webhook paths configured successfully!", "color: green; font-weight: bold;");
-    return true; // Signal success
+    return true; // Signal overall success
   } else {
     console.error("%cFailed to configure all static webhook paths.", "color: red; font-weight: bold;");
-    return false; // Signal failure
+    return false; // Signal overall failure
   }
 }
 
@@ -350,15 +373,17 @@ async function startPolling() {
     return; // Ensure polling starts only once
   }
   pollingStarted = true;
-  console.log("Starting long-polling process...");
+  console.log("%cStarting long-polling process...", "color: blue; font-weight: bold;");
 
   for(;;){
     // Basic check for session still being active inside the loop
     if(!S.hookUrl || !S.sessionToken){
-        console.warn("Polling halted: Hook URL or session token is no longer available.");
-        // Stop polling if session is lost, could add logic to try re-authenticate
-        await new Promise(r=>setTimeout(r, DEF_FALLBACK)); // Wait longer before checking again
-        continue; // Continue loop to re-check S.hookUrl/S.sessionToken
+        console.warn("Polling halted: Hook URL or session token is no longer available. Attempting to restart setup...");
+        pollingStarted = false; // Allow restart
+        // Try to re-trigger setup if session is lost, it will eventually call startPolling again if successful
+        document.dispatchEvent(new Event("ok0:newSlug"));
+        await new Promise(r=>setTimeout(r, DEF_FALLBACK));
+        continue;
     }
 
     try{
@@ -393,9 +418,9 @@ async function startPolling() {
         console.warn(`Polling failed: HTTP ${r.status} - ${r.statusText}`);
         if (r.status === 401 || r.status === 404) {
           console.error("Authentication or token issue during polling. Consider re-authenticating.");
-          // If 401/404, we might want to explicitly set pollingStarted to false
-          // to allow a restart if auth is fixed, or trigger re-auth flow.
-          // For now, it will just keep retrying.
+          // In case of auth error, allow re-auth flow to potentially re-trigger polling.
+          pollingStarted = false; // Allow poll to restart after re-auth
+          // No need to dispatch "ok0:newSlug" here, as 0knowledge.core.js should handle auth refresh.
         }
       }
     }catch(e){
@@ -408,13 +433,14 @@ async function startPolling() {
 // Main initialization logic for p2p.js related to session and polling
 document.addEventListener("ok0:newSlug", async () => {
     // This listener ensures we have S.hookUrl and S.sessionToken
+    // setStaticWebhookPaths will handle retries internally.
     const pathsSuccessfullySet = await setStaticWebhookPaths();
 
     if (pathsSuccessfullySet) {
         // Only start polling if paths were set successfully
         startPolling();
     } else {
-        console.error("Polling will NOT start due to failure in configuring static webhook paths.");
+        console.error("%cPolling will NOT start due to failure in configuring static webhook paths.", "color: red; font-weight: bold;");
     }
 });
 
