@@ -124,7 +124,6 @@ function flushPending(chat){
   if (!chat.peerSlug) return;
   const q = pending[chat.chat_url] || [];
   while (q.length){
-    const enc=q.shift();
     // Send to the other client's direct webhook.site route
     fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>q.unshift(enc));
   }
@@ -133,7 +132,6 @@ function flushPendingOffline(chat){
   if (!chat.peerSlug) return;
   const q = pendingOffline[chat.chat_url] || [];
   while (q.length){
-    const enc=q.shift();
     // Send to the other client's direct webhook.site route
     fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>q.unshift(enc));
   }
@@ -157,7 +155,7 @@ async function ensureChat(chat){
     d.meta=d.meta||{};
     // Use S.hookUrl for the current user's direct webhook endpoint
     d.meta[S.myPubKeyHex]={ slug:S.hookSlug,http:S.hookUrl,email:S.hookEmail,ts:Date.now() };
-    if (chat.peerSlug) d.meta[chat.peerSlug]={ slug:chat.peerSlug,http:`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,email:chat.peerEmail,ts:Date.now() };
+    if (chat.peerSlug) d.meta[chat.peerSlug]={ slug:chat.peerSlug,http:`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,email:chat.peerEmail,ts:Date.2025() };
   });
 }
 
