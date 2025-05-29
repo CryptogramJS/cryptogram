@@ -1,9 +1,9 @@
 /*****************************************************************
- * dapp.js – UI layer for Cryptogram MVP  (2025-05, TSA edition)
+ * dapp.js – UI layer for Cryptogram MVP  (2025-05, TSA edition)
  *****************************************************************/
-import { sha256 }   from './sha.js';
-import { validator} from './validator.js';
-window.sha256 = sha256;                       // captcha util
+import { sha256 }    from './sha.js';
+import { validator } from './validator.js';
+window.sha256 = sha256;
 
 /* libsodium init */
 await sodium.ready;
@@ -83,9 +83,6 @@ $$('button[data-bs-toggle="tab"]').forEach(b=>b.addEventListener('shown.bs.tab',
     e.target.classList.toggle('is-invalid',!ok);
   };
 });
-
-/* ---------- UI state ------------------------------------------------------ */
-let myUsername='',currentChat=null,chatPoll=null;
 
 /* ---------- register / login -------------------------------------------- */
 $('#btn-reg').onclick = async ()=>{
@@ -195,7 +192,7 @@ $('#btn-invite').onclick = async()=>{
   if(!validator.isValidSlug(slug)) return showToast('Invalid slug','warning');
   toggleLoading($('#btn-invite'),true);
   try{ await sendInvite(usernameToSlug(slug)); showToast('Invite sent.','success');
-       bootstrap.Modal.getInstance($('#inviteModal'))?.hide(); $('#slug-invite').value=''; }
+        bootstrap.Modal.getInstance($('#inviteModal'))?.hide(); $('#slug-invite').value=''; }
   catch(e){ showToast(e.message,'danger');}
   toggleLoading($('#btn-invite'),false);
 };
@@ -209,9 +206,9 @@ async function renderInvites(){
     const pend=invites_log.filter(i=>i.op==='new'&&!invites_log.some(j=>j.ts===i.ts&&j.op==='accepted'));
     $('#inv-box').innerHTML = pend.length
       ? pend.map(i=>`<div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-secondary rounded">
-           <code class="text-light">${i.ts.slice(0,8)}</code>
-           <button class="btn btn-sm btn-primary accept" data-ts="${i.ts}" data-url="${i.chat_url}">Accept</button>
-         </div>`).join('')
+              <code class="text-light">${i.ts.slice(0,8)}</code>
+              <button class="btn btn-sm btn-primary accept" data-ts="${i.ts}" data-url="${i.chat_url}">Accept</button>
+            </div>`).join('')
       : '<p class="small text-muted text-center">No pending invitations.</p>';
   }catch{ showToast('Error loading invites','danger');}
 }
@@ -219,7 +216,7 @@ setInterval(renderInvites,30000);
 $('#inv-box').onclick = e=>{
   if(e.target.classList.contains('accept')){
     $('#nicknameModal').dataset.chatUrl=e.target.dataset.url;
-    $('#nicknameModal').dataset.ts     =e.target.dataset.ts;
+    $('#nicknameModal').dataset.ts      =e.target.dataset.ts;
     new bootstrap.Modal($('#nicknameModal')).show();
   }
 };
@@ -243,14 +240,12 @@ $('#saveNicknameBtn').onclick = async ()=>{
     const fromSlug = raw?.match(/"fromSlug":"([^"]+)"/)?.[1];
     if(!fromSlug) throw new Error('Invalid invitation.');
     const fromEmail=`${fromSlug}@${CFG.webhook_email_domain}`;
+
+    // Calling onIncomingWebhook, which handles sending the 'accepted' message via direct route
     await onIncomingWebhook({type:'invite',chatUrl,keyHex:await deriveKeyHex(ts),fromSlug,fromEmail});
+
     await setNickname(chatUrl,nick);
-    const mySlug=localStorage.getItem('0k_webhook_slug');
-    const myEmail=localStorage.getItem('0k_webhook_email');
-    await fetch(`${CFG.webhook_base_url}/${fromSlug}`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({type:'accepted',chatUrl,bySlug:mySlug,byEmail:myEmail})
-    }).catch(()=>{});
+
     await renderChats(); await renderInvites(); showToast('Invite accepted.','success');
     bootstrap.Modal.getInstance($('#nicknameModal')).hide(); $('#nicknameInput').value='';
   }catch(e){ showToast(e.message,'danger');}
