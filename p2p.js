@@ -21,10 +21,6 @@ const DEF_FALLBACK = 30000;
 // Define static paths to be set on the user's personal webhook
 const STATIC_WEBHOOK_PATHS = ['invite', 'accepted', 'declined', 'message', 'flush'];
 
-// Flag to indicate if static webhook paths have been successfully set
-let staticPathsReady = false;
-let setPathsPromise = null; // To hold the promise for setting paths
-
 /* QUEUES */
 const pending        = {};
 const pendingOffline = {};
@@ -34,7 +30,7 @@ function safeToPush(localMeta, remoteMeta) {
   if (!remoteMeta?.lastModified) return true;
   if (remoteMeta.lastModified <  localMeta.lastModified) return true;
   if (remoteMeta.lastModified >  localMeta.lastModified) return false;
-  return (localMeta.binLen || 0) >= (remote.binLen || 0);
+  return (localMeta.binLen || 0) >= (remoteMeta.binLen || 0);
 }
 
 /* CRDT */
@@ -134,6 +130,7 @@ function flushPending(chat){
   if (!chat.peerSlug) return;
   const q = pending[chat.chat_url] || [];
   while (q.length){
+    // Send to the other client's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
@@ -141,6 +138,7 @@ function flushPendingOffline(chat){
   if (!chat.peerSlug) return;
   const q = pendingOffline[chat.chat_url] || [];
   while (q.length){
+    // Send to the other client's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
@@ -175,11 +173,13 @@ async function sendInvite(friendSlug){
   S.personal.chats.push({chat_url:chatUrl,key_hex:keyHex,peerSlug:null,peerEmail:null,nickname:null});
   await ok0.putPersonalBlob(); ok0.db.profile.put({key:"me",data:S.personal});
   const invite={type:"invite",chatUrl,keyHex,ts:ts_hex,fromSlug:S.hookSlug,fromEmail:S.hookEmail};
-  fetch(`${CFG.webhook_base_url}/${friendSlug}/invite`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
+  // Send invite to the friend's webhook.site route THROUGH allorigins.win, to the /invite static path
+  await fetch(`${CFG.webhook_base_url}/${friendSlug}/invite`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
 }
 
 async function declineInvite(chatUrl,inviterSlug){
-  fetch(`${CFG.webhook_base_url}/${inviterSlug}/declined`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
+  // Send decline to the inviter's webhook.site route THROUGH allorigins.win, to the /declined static path
+  await fetch(`${CFG.webhook_base_url}/${inviterSlug}/declined`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
   const idx=S.personal.chats.findIndex(c=>c.chat_url===chatUrl);
   if(idx!==-1){S.personal.chats.splice(idx,1);await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});}
 }
@@ -197,6 +197,7 @@ async function sendMessage(chat,txt){
 
   const queue=(!chat.peerSlug||!navigator.onLine)?(pendingOffline[chat.chat_url] ||= []):(pending[chat.chat_url] ||= []);
   if(chat.peerSlug&&navigator.onLine){
+    // Send message to the peer's webhook.site route THROUGH allorigins.win, to the /message static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/message`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>queue.push(enc));
   }else queue.push(enc);
 }
@@ -225,6 +226,7 @@ async function verifySnapshot(chatUrl,ts){
 async function closeChat(chat){
   await flushChat(chat.chat_url);
   if(chat.peerSlug){
+    // Send flush to the peer's webhook.site route THROUGH allorigins.win, to the /flush static path
     fetch(`${CFG.webhook_base_url}/${chat.peerSlug}/flush`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"flush",chatUrl:chat.chat_url,ts:Date.now()})}).catch(()=>{});
   }
 }
@@ -240,6 +242,7 @@ async function onIncomingWebhook(webhookRequest){
       S.personal.chats.push({chat_url:msg.chatUrl,key_hex:msg.keyHex,peerSlug:msg.fromSlug,peerEmail:msg.fromEmail,nickname:null});
       await ok0.putPersonalBlob(); ok0.db.profile.put({key:"me",data:S.personal});
     }
+    // Acknowledge invite by sending 'accepted' to the sender THROUGH allorigins.win, to the /accepted static path
     fetch(`${CFG.webhook_base_url}/${msg.fromSlug}/accepted`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"accepted",chatUrl:msg.chatUrl,bySlug:S.hookSlug,byEmail:S.hookEmail})}).catch(()=>{});
     break;
   }
@@ -296,102 +299,47 @@ document.addEventListener("ok0:newSlug",updateMyEndpointAll);
 /* Set Static Webhook Paths on Login */
 async function setStaticWebhookPaths() {
   if (!S.hookUrl || !S.sessionToken) {
-    // If not logged in or token not available, ensure promise is not left hanging.
-    // This case usually means ok0:newSlug hasn't fired yet, so it will be called again.
-    return Promise.reject(new Error("Hook URL or session token not available for setting static paths."));
+    return;
   }
 
-  if (setPathsPromise) { // If already in progress, return the existing promise
-    return setPathsPromise;
-  }
+  console.log("Attempting to set static webhook paths for token:", S.hookSlug);
+  for (const path of STATIC_WEBHOOK_PATHS) {
+    const fullPath = `/${path}`;
+    const endpoint = `${S.hookUrl}/paths${fullPath}`;
+    const payload = {
+      response_body: JSON.stringify({ status: "ok", path: fullPath, received: true }),
+      response_content_type: "application/json"
+    };
 
-  setPathsPromise = new Promise(async (resolve, reject) => {
-    console.log("Attempting to set static webhook paths for token:", S.hookSlug);
-    let allPathsSetSuccessfully = true;
+    try {
+      const r = await fetch(endpoint, {
+        method: "PUT",
+        headers: {
+          'Content-Type': 'application/json',
+          '0K-Token': S.sessionToken
+        },
+        body: JSON.stringify(payload)
+      });
 
-    for (const path of STATIC_WEBHOOK_PATHS) {
-      const fullPath = `/${path}`;
-      const endpoint = `${S.hookUrl}/paths${fullPath}`;
-      const payload = {
-        response_body: JSON.stringify({ status: "ok", path: fullPath, received: true }),
-        response_content_type: "application/json"
-      };
-
-      try {
-        const r = await fetch(endpoint, {
-          method: "PUT",
-          headers: {
-            'Content-Type': 'application/json',
-            '0K-Token': S.sessionToken
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (r.ok) {
-          console.log(`Successfully set webhook path: ${fullPath}`);
-        } else {
-          allPathsSetSuccessfully = false;
-          const errorText = await r.text();
-          console.error(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}`);
-        }
-      } catch (e) {
-        allPathsSetSuccessfully = false;
-        console.error(`Error setting webhook path ${fullPath}:`, e);
+      if (r.ok) {
+        console.log(`Successfully set webhook path: ${fullPath}`);
+      } else {
+        const errorText = await r.text();
+        console.error(`Failed to set webhook path ${fullPath}: HTTP ${r.status} - ${r.statusText}, Body: ${errorText}`);
       }
+    } catch (e) {
+      console.error(`Error setting webhook path ${fullPath}:`, e);
     }
-
-    if (allPathsSetSuccessfully) {
-      console.log("%cAll static webhook paths configured successfully!", "color: green; font-weight: bold;");
-      staticPathsReady = true; // Set the flag
-      resolve();
-    } else {
-      console.error("%cFailed to configure all static webhook paths.", "color: red; font-weight: bold;");
-      staticPathsReady = false; // Ensure flag is false on failure
-      reject(new Error("Failed to set all static webhook paths."));
-    }
-    setPathsPromise = null; // Clear the promise after completion (success or failure)
-  });
-
-  return setPathsPromise;
+  }
 }
 
-// Ensure setStaticWebhookPaths is called when the slug is available
-document.addEventListener("ok0:newSlug", async () => {
-    try {
-        await setStaticWebhookPaths();
-    } catch (e) {
-        console.error("Initial static path setup failed, polling might not start:", e);
-    }
-});
+document.addEventListener("ok0:newSlug", setStaticWebhookPaths);
 
 /* LONG-POLL */
 let lastPoll=0;
 (async function poll(){
   for(;;){
-    // Wait until static paths are confirmed ready
-    if (!staticPathsReady) {
-        // If there's an ongoing promise to set paths, wait for it
-        if (setPathsPromise) {
-            try {
-                await setPathsPromise;
-            } catch (e) {
-                // If setting paths failed, polling cannot proceed reliably.
-                console.error("Polling cannot start: Static webhook paths failed to set up.", e);
-                await new Promise(r => setTimeout(r, DEF_FALLBACK)); // Wait longer on failure
-                continue; // Retry after delay
-            }
-        } else {
-            // If staticPathsReady is false but no promise is active, means setup hasn't been attempted yet
-            // or failed previously without a promise. Wait and retry.
-            console.log("Waiting for static webhook paths to be ready before polling...");
-            await new Promise(r => setTimeout(r, 2000));
-            continue;
-        }
-    }
-
-    // Ensure session is active before polling
     if(!S.hookUrl || !S.sessionToken){await new Promise(r=>setTimeout(r,2000));continue;}
-
     try{
       const url=`${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`;
       const r=await fetch(url,{
