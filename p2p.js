@@ -124,16 +124,16 @@ function flushPending(chat){
   if (!chat.peerSlug) return;
   const q = pending[chat.chat_url] || [];
   while (q.length){
-    // Send to the other client's direct webhook.site route
-    fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
+    // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+    fetch(`${CFG.webhook_base_url}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
 function flushPendingOffline(chat){
   if (!chat.peerSlug) return;
   const q = pendingOffline[chat.chat_url] || [];
   while (q.length){
-    // Send to the other client's direct webhook.site route
-    fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
+    // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+    fetch(`${CFG.webhook_base_url}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:q.shift()})}).catch(enc=>q.unshift(enc));
   }
 }
 
@@ -153,9 +153,10 @@ async function ensureChat(chat){
   await initChatDoc(chat.chat_url, chat.key_hex);
   amChange(chat.chat_url,d=>{
     d.meta=d.meta||{};
-    // Use S.hookUrl for the current user's direct webhook endpoint
+    // Use S.hookUrl (which now includes allorigins.win) for the current user's endpoint
     d.meta[S.myPubKeyHex]={ slug:S.hookSlug,http:S.hookUrl,email:S.hookEmail,ts:Date.now() }; // Corrected Date.now()
-    if (chat.peerSlug) d.meta[chat.peerSlug]={ slug:chat.peerSlug,http:`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,email:chat.peerEmail,ts:Date.now() };
+    // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+    if (chat.peerSlug) d.meta[chat.peerSlug]={ slug:chat.peerSlug,http:`${CFG.webhook_base_url}/${chat.peerSlug}`,email:chat.peerEmail,ts:Date.now() };
   });
 }
 
@@ -168,13 +169,13 @@ async function sendInvite(friendSlug){
   S.personal.chats.push({chat_url:chatUrl,key_hex:keyHex,peerSlug:null,peerEmail:null,nickname:null});
   await ok0.putPersonalBlob(); ok0.db.profile.put({key:"me",data:S.personal});
   const invite={type:"invite",chatUrl,keyHex,ts:ts_hex,fromSlug:S.hookSlug,fromEmail:S.hookEmail};
-  // Send invite to the friend's direct webhook.site route
-  await fetch(`${CFG.webhook_base_url_direct}/${friendSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
+  // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+  await fetch(`${CFG.webhook_base_url}/${friendSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify(invite)}).catch(()=>{});
 }
 
 async function declineInvite(chatUrl,inviterSlug){
-  // Send decline to the inviter's direct webhook.site route
-  await fetch(`${CFG.webhook_base_url_direct}/${inviterSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
+  // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+  await fetch(`${CFG.webhook_base_url}/${inviterSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"declined",chatUrl,bySlug:S.hookSlug})}).catch(()=>{});
   const idx=S.personal.chats.findIndex(c=>c.chat_url===chatUrl);
   if(idx!==-1){S.personal.chats.splice(idx,1);await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});}
 }
@@ -192,8 +193,8 @@ async function sendMessage(chat,txt){
 
   const queue=(!chat.peerSlug||!navigator.onLine)?(pendingOffline[chat.chat_url] ||= []):(pending[chat.chat_url] ||= []);
   if(chat.peerSlug&&navigator.onLine){
-    // Send message to the peer's direct webhook.site route
-    fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>queue.push(enc));
+    // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+    fetch(`${CFG.webhook_base_url}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"message",chatUrl:chat.chat_url,payload:enc})}).catch(()=>queue.push(enc));
   }else queue.push(enc);
 }
 
@@ -221,8 +222,8 @@ async function verifySnapshot(chatUrl,ts){
 async function closeChat(chat){
   await flushChat(chat.chat_url);
   if(chat.peerSlug){
-    // Send flush to the peer's direct webhook.site route
-    fetch(`${CFG.webhook_base_url_direct}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"flush",chatUrl:chat.chat_url,ts:Date.now()})}).catch(()=>{});
+    // All calls to other clients use CFG.webhook_base_url (with allorigins.win)
+    fetch(`${CFG.webhook_base_url}/${chat.peerSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"flush",chatUrl:chat.chat_url,ts:Date.now()})}).catch(()=>{});
   }
 }
 
@@ -230,8 +231,8 @@ async function closeChat(chat){
 async function onIncomingWebhook(msg){
   switch(msg.type){
   case"invite":{if(!S.personal.chats.some(c=>c.chat_url===msg.chatUrl)){S.personal.chats.push({chat_url:msg.chatUrl,key_hex:msg.keyHex,peerSlug:msg.fromSlug,peerEmail:msg.fromEmail,nickname:null});await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});}
-    // Acknowledge invite by sending 'accepted' to the sender's direct webhook.site route
-    fetch(`${CFG.webhook_base_url_direct}/${msg.fromSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"accepted",chatUrl:msg.chatUrl,bySlug:S.hookSlug,byEmail:S.hookEmail})}).catch(()=>{});break;}
+    // Acknowledge invite by sending 'accepted' to the sender using CFG.webhook_base_url
+    fetch(`${CFG.webhook_base_url}/${msg.fromSlug}`,{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({type:"accepted",chatUrl:msg.chatUrl,bySlug:S.hookSlug,byEmail:S.hookEmail})}).catch(()=>{});break;}
   case"accepted":{const c=S.personal.chats.find(x=>x.chat_url===msg.chatUrl);if(c){c.peerSlug=msg.bySlug;c.peerEmail=msg.byEmail;await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});flushPending(c);flushPendingOffline(c);}break;}
   case"declined":{const idx=S.personal.chats.findIndex(c=>c.chat_url===msg.chatUrl);if(idx!==-1){const ch=S.personal.chats[idx];if(!ch.peerSlug){S.personal.chats.splice(idx,1);delete pending[ch.chat_url];delete pendingOffline[ch.chat_url];await ok0.putPersonalBlob();ok0.db.profile.put({key:"me",data:S.personal});}}break;}
   case"flush": await flushChat(msg.chatUrl); break;
@@ -244,7 +245,7 @@ async function updateMyEndpointAll(){
   for(const ch of S.personal.chats){
     await initChatDoc(ch.chat_url,ch.key_hex);
     amChange(ch.chat_url,d=>{d.meta=d.meta||{};
-      // Use S.hookUrl for the current user's direct webhook endpoint
+      // Use S.hookUrl (which includes allorigins.win) for the current user's endpoint
       d.meta[S.myPubKeyHex]={slug:S.hookSlug,http:S.hookUrl,email:S.hookEmail,ts:Date.now()};
     });
   }
@@ -255,10 +256,10 @@ document.addEventListener("ok0:newSlug",updateMyEndpointAll);
 let lastPoll=0;
 (async function poll(){
   for(;;){
-    // Use S.hookUrl (your own direct webhook.site URL with token) for long polling
+    // Use S.hookUrl (your own webhook.site URL with token, through allorigins.win) for long polling
     if(!S.hookUrl){await new Promise(r=>setTimeout(r,2000));continue;}
     try{
-      const url=`${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`; // Changed to S.hookUrl
+      const url=`${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`; // Uses S.hookUrl (from 0knowledge.core.js)
       const r=await fetch(url,{cache:"no-store"});
       if(r.ok){
         const list=await r.json();
