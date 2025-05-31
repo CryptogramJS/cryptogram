@@ -178,11 +178,9 @@
   await initChatDoc(chat.chat_url, chat.key_hex);
   amChange(chat.chat_url, d=>{
     d.meta = d.meta || {};
-    d.meta[S.myPubKeyHex] = { slug:S.hookSlug, http:`${CFG.webhook_base_url_direct}/${S.hookSlug}`, email:S.hookEmail, ts:Date.now() };
+    d.meta[S.myPubKeyHex] = { slug:S.hookSlug, http:`${CFG.webhook_base_url}/${S.hookSlug}`, email:S.hookEmail, ts:Date.now() };
     if (chat.peerSlug) {
-      const peerHttp = CFG.webhook_base_url.includes('allorigins')
-          ? `${CFG.webhook_base_url}/${chat.peerSlug}`
-          : `${CFG.webhook_base_url_direct}/${chat.peerSlug}`;
+      const peerHttp = `${CFG.webhook_base_url}/${chat.peerSlug}`;
       d.meta[chat.peerSlug] = { slug:chat.peerSlug, http: peerHttp, email:chat.peerEmail, ts:Date.now() };
     }
   });
@@ -257,7 +255,7 @@
     headers:{ 'Content-Type':'application/json' },
     body:JSON.stringify({ type:"declined", chatUrl, bySlug: S.hookSlug })
   }).catch(()=>{});
-  const idx = S.personal.chats.findIndex(c => c.chat_url === chatUrl);
+  const idx = S.personal.chats.findIndex(c => c.chat_url === chatUrl && c.peerSlug === inviterSlug);
   if (idx !== -1) {
     const ch = S.personal.chats.splice(idx,1)[0];
     delete pending[ch.chat_url];
@@ -419,7 +417,7 @@
     }
   }
  }
- document.addEventListener("ok0:newSlug", async (event) => {
+ document.addEventListener("ok0:newSlug", async () => {
   await setStaticWebhookPaths();
   await updateMyEndpointInAllChats();
  });
@@ -429,7 +427,7 @@
   if (!S.hookSlug || !S.hookApiToken) return;
   for (const path of STATIC_WEBHOOK_PATHS) {
     const apiPath = `/${path}`;
-    const endpoint = `${CFG.webhook_base_url_direct || 'https://webhook.site'}/token/${S.hookSlug}/paths${apiPath}`;
+    const endpoint = `${CFG.webhook_base_url}/token/${S.hookSlug}/paths${apiPath}`;
     const payload = {
       response_body: JSON.stringify({ status:"ok", path:apiPath, description:`Path ${apiPath} active.` }),
       response_content_type: "application/json",
@@ -461,7 +459,7 @@
       continue;
     }
     try {
-      const pollUrl = `${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`;
+      const pollUrl = `${CFG.webhook_base_url}/${S.hookSlug}/requests?min_id=${lastPoll}&sort=asc&limit=20`;
       const headers = { 'Cache-Control': 'no-cache' };
       const r = await fetch(pollUrl, { cache:"no-store", headers });
       if (r.ok) {
