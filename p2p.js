@@ -21,6 +21,20 @@
   let invitePollInterval = null;
   let awaitingInviteChatUrl = null;
 
+  /* HELPER */
+  async function ensurePersonal() {
+    if (!S.personal) {
+      try {
+        await ok0.loadPersonalBlob();
+        await ok0.db.profile.get({ key: "me" });
+      } catch {
+      }
+    }
+    if (S.personal && !Array.isArray(S.personal.chats)) {
+      S.personal.chats = [];
+    }
+  }
+
   /* CONFLICT POLICY */
   function safeToPush(localMeta, remoteMeta) {
     if (!remoteMeta?.lastModified) return true;
@@ -203,7 +217,9 @@
   }
 
   async function sendInvite(friendSlug) {
+    await ensurePersonal();
     if (!S.personal?.chats) throw new Error("Not authenticated");
+
     const r = await fetch(CFG.jsonblob_endpoint, {
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
@@ -227,7 +243,7 @@
     S.personal.chats.push(newChat);
     await ok0.putPersonalBlob();
     ok0.db.profile.put({ key: "me", data: S.personal });
-    awaitingInviteChatUrl = chatUrl; // start waiting for B's response
+    awaitingInviteChatUrl = chatUrl;
 
     await ensureChat(newChat);
 
@@ -246,10 +262,11 @@
       body: JSON.stringify(invite)
     }).catch(() => { });
 
-    startInvitePoll(); // only poll until accepted/declined
+    startInvitePoll();
   }
 
   async function acceptInvite(chatUrl, inviterSlug, keyHex, inviterPubKey) {
+    await ensurePersonal();
     const chat = S.personal.chats.find(c => c.chat_url === chatUrl);
     if (chat) {
       chat.peerSlug = inviterSlug;
@@ -281,6 +298,7 @@
   }
 
   async function declineInvite(chatUrl, inviterSlug) {
+    await ensurePersonal();
     await fetch(getPeerWebhookUrl(inviterSlug, 'declined'), {
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
@@ -303,6 +321,7 @@
   }
 
   async function sendMessage(chat, txt) {
+    await ensurePersonal();
     await ensureChat(chat);
     const ctx = chatDocs[chat.chat_url]; if (!ctx || !ctx.key) throw new Error("Chat not properly initialized or missing key");
     const n = sodium.randombytes_buf(24);
@@ -414,6 +433,7 @@
     switch (msgType) {
       case "invite": {
         const { chatUrl, keyHex, fromSlug, fromEmail, fromPubKey } = msgData;
+        await ensurePersonal();
         if (!S.personal?.chats) return;
         if (!S.personal.chats.some(c => c.chat_url === chatUrl)) {
           S.personal.chats.push({
@@ -435,6 +455,7 @@
       }
       case "accepted": {
         const { chatUrl, bySlug, byEmail, byPubKey } = msgData;
+        await ensurePersonal();
         const c = S.personal.chats.find(x => x.chat_url === chatUrl);
         if (c) {
           c.peerSlug = bySlug;
@@ -453,6 +474,7 @@
       }
       case "declined": {
         const { chatUrl, bySlug } = msgData;
+        await ensurePersonal();
         const idx = S.personal.chats.findIndex(c => c.chat_url === chatUrl && c.peerSlug === bySlug);
         if (idx !== -1) {
           const ch = S.personal.chats.splice(idx, 1)[0];
@@ -478,6 +500,7 @@
       }
       case "message": {
         const { chatUrl, payload } = msgData;
+        await ensurePersonal();
         const chat = S.personal.chats.find(c => c.chat_url === chatUrl);
         if (!chat) return;
         if (!chat.key_hex && chatDocs[chatUrl]?.key) {
