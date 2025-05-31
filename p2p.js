@@ -15,12 +15,11 @@
   /* CONSTANTS */
   const chatDocs     = {};
   const DEF_SYNC_MS  = 3000;
-  const DEF_FALLBACK = 30000;
   const STATIC_WEBHOOK_PATHS = ['invite','accepted','declined','message','flush'];
 
-  /* QUEUES */
-  const pending        = {};
-  const pendingOffline = {};
+  /* STATE */
+  let invitePollInterval = null;
+  let awaitingInviteChatUrl = null;
 
   /* CONFLICT POLICY */
   function safeToPush(localMeta, remoteMeta) {
@@ -86,7 +85,7 @@
       if (nSlug) {
         rec.peerSlug  = nSlug;
         rec.peerEmail = `${nSlug}@${CFG.webhook_email_domain}`;
-        await ok0.putPersonalBlob(); 
+        await ok0.putPersonalBlob();
         ok0.db.profile.put({ key:"me", data:S.personal });
         flushPending(rec);
         flushPendingOffline(rec);
@@ -204,6 +203,7 @@
   }
 
   async function sendInvite(friendSlug) {
+    if (!S.personal?.chats) throw new Error("Not authenticated");
     const r = await fetch(CFG.jsonblob_endpoint, {
       method: "POST",
       headers: { 'Content-Type': 'application/json' },
@@ -227,6 +227,8 @@
     S.personal.chats.push(newChat);
     await ok0.putPersonalBlob();
     ok0.db.profile.put({ key: "me", data: S.personal });
+    awaitingInviteChatUrl = chatUrl; // start waiting for B's response
+
     await ensureChat(newChat);
 
     const invite = {
@@ -243,6 +245,8 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(invite)
     }).catch(() => { });
+
+    startInvitePoll(); // only poll until accepted/declined
   }
 
   async function acceptInvite(chatUrl, inviterSlug, keyHex, inviterPubKey) {
@@ -254,6 +258,7 @@
       chat.accepted = true;
       chat.peerPubKey = inviterPubKey;
       chat.iInitiated = false;
+      awaitingInviteChatUrl = null;
 
       await ok0.putPersonalBlob();
       ok0.db.profile.put({ key: "me", data: S.personal });
@@ -270,6 +275,8 @@
           byPubKey: S.myPubKeyHex
         })
       }).catch(() => { });
+
+      stopInvitePoll();
     }
   }
 
@@ -290,6 +297,8 @@
         clearInterval(chatDocs[ch.chat_url].interval);
         delete chatDocs[ch.chat_url];
       }
+      awaitingInviteChatUrl = null;
+      stopInvitePoll();
     }
   }
 
@@ -358,6 +367,43 @@
     }
   }
 
+  /* INVITE POLLING */
+  async function pollInvitationResponse() {
+    if (!awaitingInviteChatUrl) return;
+    const realUrl = `${S.hookUrl}/requests?min_id=0&sort=asc&limit=20`;
+    const aoUrl   = `https://api.allorigins.win/raw?url=${encodeURIComponent(realUrl)}`;
+    try {
+      const res = await fetch(aoUrl);
+      if (res.ok) {
+        const responseJson = await res.json();
+        const list = responseJson.data || responseJson;
+        for (const it of Array.isArray(list) ? list : []) {
+          const parsed = (() => {
+            try { return JSON.parse(it.content); }
+            catch { return null; }
+          })();
+          if (!parsed) continue;
+          if ((parsed.type === 'accepted' || parsed.type === 'declined') && parsed.chatUrl === awaitingInviteChatUrl) {
+            stopInvitePoll();
+            return;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  function startInvitePoll() {
+    if (invitePollInterval) return;
+    invitePollInterval = setInterval(pollInvitationResponse, CFG.chat_sync_interval_ms || 3000);
+  }
+
+  function stopInvitePoll() {
+    if (!invitePollInterval) return;
+    clearInterval(invitePollInterval);
+    invitePollInterval = null;
+    awaitingInviteChatUrl = null;
+  }
+
   /* WEBHOOK HANDLER */
   async function onIncomingWebhook(webhookRequest) {
     const msgType = webhookRequest.path?.replace(/^\//, '') || webhookRequest.type;
@@ -368,6 +414,7 @@
     switch (msgType) {
       case "invite": {
         const { chatUrl, keyHex, fromSlug, fromEmail, fromPubKey } = msgData;
+        if (!S.personal?.chats) return;
         if (!S.personal.chats.some(c => c.chat_url === chatUrl)) {
           S.personal.chats.push({
             chat_url: chatUrl,
@@ -399,6 +446,7 @@
           await ensureChat(c);
           flushPending(c);
           flushPendingOffline(c);
+          stopInvitePoll();
           document.dispatchEvent(new CustomEvent("ok0:p2p:inviteAccepted", { detail: msgData }));
         }
         break;
@@ -416,6 +464,7 @@
             clearInterval(chatDocs[ch.chat_url].interval);
             delete chatDocs[ch.chat_url];
           }
+          stopInvitePoll();
           document.dispatchEvent(new CustomEvent("ok0:p2p:inviteDeclined", { detail: msgData }));
         }
         break;
@@ -488,75 +537,6 @@
       } catch {}
     }
   }
-
-  /* LONG-POLL FOR INCOMING REQUESTS ON OWN WEBHOOK */
-  let lastPoll = 0;
-  async function poll() {
-    for (;;) {
-      if (!S.hookSlug) {
-        await new Promise(r => setTimeout(r, CFG.chat_sync_interval_ms || 5000));
-        continue;
-      }
-      try {
-        const realUrl = `${S.hookUrl}/requests?min_id=${lastPoll}&sort=asc&limit=20`;
-        const aoUrl   = `https://api.allorigins.win/raw?url=${encodeURIComponent(realUrl)}`;
-        const res     = await fetch(aoUrl);
-        if (res.ok) {
-          const responseJson = await res.json();
-          const list = responseJson.data || responseJson;
-          if (Array.isArray(list)) {
-            for (const it of list) {
-              if (it.id > lastPoll) {
-                lastPoll = it.id;
-                let parsedContent;
-                try {
-                  parsedContent = JSON.parse(it.content);
-                } catch {
-                  parsedContent = { raw_content: it.content, type: 'unknown_raw' };
-                }
-                const webhookEventData = {
-                  ...parsedContent,
-                  path: it.request_path || it.path,
-                  method: it.method,
-                  query: it.query,
-                  headers: it.headers,
-                  from_ip: it.ip_address,
-                  webhook_id: it.id
-                };
-                await onIncomingWebhook(webhookEventData);
-              }
-            }
-          }
-        } else {
-          if (res.status === 401 || res.status === 403) {
-            console.error("Auth issue during polling.");
-          } else if (res.status === 404) {
-            S.hookSlug = "";
-            S.hookUrl = "";
-            S.hookApiToken = "";
-            document.dispatchEvent(new CustomEvent("ok0:webhookInvalidated"));
-            return;
-          }
-        }
-      } catch {}
-      await new Promise(r => setTimeout(r, CFG.chat_sync_interval_ms || 3000));
-    }
-  }
-
-  /* START POLLING */
-  // Apelează poll() doar după ce ai setat rutele sau după autentificare
-  poll();
-
-  /* ONLINE EVENT LISTENER */
-  window.addEventListener("online", async () => {
-    if (!S.personal?.chats) return;
-    for (const ch of S.personal.chats) {
-      if (ch.accepted || ch.iInitiated) flushPendingOffline(ch);
-    }
-    for (const ctx of Object.values(chatDocs)) {
-      if (ctx.dirty) await flushChat(ctx.docUrl);
-    }
-  });
 
   /* EXPORT API */
   Object.assign(ok0, {
